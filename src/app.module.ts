@@ -4,10 +4,26 @@ import { AuthModule } from './auth/auth.module';
 import { NavigationModule } from './navigation/navigation.module';
 import { HistoryModule } from './history/history.module';
 import { CommonModule } from './common/common.module';
+import { MongooseModule } from '@nestjs/mongoose';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
-    UsersModule, AuthModule, NavigationModule, HistoryModule, CommonModule
+    CommonModule,
+
+    // MongoDB
+    MongooseModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        uri: configService.get<string>('MONGODB_URI'),
+      }),
+      inject: [ConfigService],
+    }),
+
+    UsersModule, 
+    AuthModule, 
+    NavigationModule, 
+    HistoryModule, 
   ],
   controllers: [],
   providers: [],
