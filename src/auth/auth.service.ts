@@ -32,13 +32,11 @@ export class AuthService {
                 throw new UnauthorizedException('Invalid token payload');
             }
 
-            const { sub: googleId, email, name } = payload;
+            const { sub: googleId, email, name: displayName = '' } = payload;
             
-            if (!googleId || !email || !name) {
+            if (!googleId || !email) {
                 throw new UnauthorizedException('Missing required user information from Google');
             }
-            
-            const displayName = name;
 
             const user: User = await this.usersService.findByGoogleIdOrCreate(
                 googleId,
@@ -47,17 +45,15 @@ export class AuthService {
             );
 
             // JWT token 생성
-            const userId = String(user._id);
-            
             const accessToken = this.jwtService.sign({
-                sub: userId,
+                sub: String(user._id),
                 email: user.email,
             });
 
             return {
                 accessToken,
                 user: {
-                    id: userId,
+                    id: String(user._id),
                     email: user.email,
                     displayName: user.displayName,
                 },
