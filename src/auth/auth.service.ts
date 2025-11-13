@@ -32,7 +32,7 @@ export class AuthService {
                 throw new UnauthorizedException('Invalid token payload');
             }
 
-            const { sub: googleId, email, name: displayName = '' } = payload;
+            const { sub: googleId, email, name: displayName = 'Client' } = payload;
             
             if (!googleId || !email) {
                 throw new UnauthorizedException('Missing required user information from Google');
