@@ -1,37 +1,31 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { User } from './schemas/user.schema';
-import { Model } from 'mongoose';
-import { InjectModel } from '@nestjs/mongoose';
+import { UsersRepository } from './repository/users.repository';
+
 
 @Injectable()
 export class UsersService {
-    constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+    constructor(private readonly usersRepository: UsersRepository) {}
 
     async findByGoogleIdOrCreate(
         googleId: string,
         email: string,
         displayName: string,
     ): Promise<User> {
-        const existingUser = await this.userModel.findOne({ googleId: googleId }).exec();
-
-        if(existingUser) {
-            return existingUser;
-        }
-
-        const newUser = new this.userModel({
-            googleId: googleId,
-            email: email,
-            displayName: displayName,
-        });
-
-        return newUser.save();
+        return this.usersRepository.findByGoogleIdOrCreate(
+            googleId,
+            email,
+            displayName,
+        );
     }
 
     async findById(id: string): Promise<User> {
-        const user = await this.userModel.findById(id).exec();
+        const user = await this.usersRepository.findById(id);
+
         if (!user) {
             throw new NotFoundException(`User with id ${id} not found`);
         }
+        
         return user;
     }
 }
