@@ -12,7 +12,6 @@ export class UsersService {
         email: string,
         displayName: string,
     ): Promise<User> {
-        
         const existingUser = await this.userModel.findOne({ googleId: googleId }).exec();
 
         if(existingUser) {
