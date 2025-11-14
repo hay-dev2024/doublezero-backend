@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { CommonController } from './common.controller';
-import { CommonService } from './common.service';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -11,8 +9,8 @@ import { ConfigModule } from '@nestjs/config';
       envFilePath: '.env',
      }),
   ],
-  controllers: [CommonController],
-  providers: [CommonService],
+  controllers: [],
+  providers: [],
   exports: [ConfigModule],
 })
 export class CommonModule {}

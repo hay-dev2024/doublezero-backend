@@ -7,10 +7,12 @@ import { Model } from 'mongoose';
 export class UsersRepository {
     constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
+    // google ID
     async findByGoogleId(googleId: string): Promise<User | null> {
         return this.userModel.findOne({ googleId }).exec();
     }
 
+    // MongoDB ObjectId
     async findById(id: string): Promise<User | null> {
         return this.userModel.findById(id).exec();
     }
@@ -27,10 +29,6 @@ export class UsersRepository {
                     googleId,
                     email,
                     displayName,
-                    createdAt: new Date(),
-                },
-                $set: {
-                    updatedAt: new Date(),
                 },
             },
             {
@@ -41,10 +39,5 @@ export class UsersRepository {
         ).exec();
 
         return user;
-    }
-
-    async create(userData: Partial<User>): Promise<User> {
-        const newUser = new this.userModel(userData);
-        return newUser.save();
     }
 }
