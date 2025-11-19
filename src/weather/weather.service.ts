@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -8,6 +8,7 @@ import { WeatherAiFeaturesDto } from './dto/weather-ai-features.dto';
 
 @Injectable()
 export class WeatherService {
+    private readonly logger = new Logger(WeatherService.name);
     private readonly apiKey: string;
     private readonly baseUrl = 'https://api.openweathermap.org/data/2.5/weather';
 
@@ -15,7 +16,7 @@ export class WeatherService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
     ) {
-        const apiKey = this.configService.get<string>('OPENWEATHER_API_KEY');
+        const apiKey = this.configService.getOrThrow<string>('OPENWEATHER_API_KEY');
         if (!apiKey) {
             throw new Error('OPENWEATHER_API_KEY is not defined in environment variables');
         }
@@ -94,22 +95,18 @@ export class WeatherService {
 
     // error handling
     private handleError(error: any): never {
-        if (error.isAxiosError) {
+        if (error?.isAxiosError) {
             if (error.response) {
-                throw new HttpException(
-                    `OpenWeather API Error: ${error.response.data?.message || 'Unknown error'}`,
-                    error.response.status,
-                );
+                const status = error.response.status;
+                const message = error.response.data?.message || 'Unknown error';
+                this.logger.error(`OpenWeather API Error - status: ${status}, message: ${message}`, error.stack);
+                throw new HttpException(`OpenWeather API Error: ${message}`, status);
             }
-            throw new HttpException(
-                `Network error: ${error.message}`,
-                HttpStatus.SERVICE_UNAVAILABLE,
-            );
+            this.logger.error(`Network error: ${error.message}`, error.stack);
+            throw new HttpException(`Network error: ${error.message}`, HttpStatus.SERVICE_UNAVAILABLE);
         }
-        throw new HttpException(
-            'Failed to fetch weather data',
-            HttpStatus.INTERNAL_SERVER_ERROR,
-        );
+        this.logger.error('Failed to fetch weather data', error?.stack);
+        throw new HttpException('Failed to fetch weather data', HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     // 단위 변환 함수

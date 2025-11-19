@@ -1,5 +1,5 @@
 import { HttpService } from '@nestjs/axios';
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlaceAutocompleteSuggestionDto, PlaceResponseDto } from './dto/place-response.dto';
 import { firstValueFrom } from 'rxjs';
@@ -15,6 +15,7 @@ const PLACE_FIELD_MASKS = {
 
 @Injectable()
 export class PlacesService {
+    private readonly logger = new Logger(PlacesService.name);
     private readonly apiKey: string | undefined;
     private readonly textSearchUrl = 'https://places.googleapis.com/v1/places:searchText';
     private readonly autoCompleteUrl = 'https://places.googleapis.com/v1/places:autocomplete';
@@ -24,7 +25,7 @@ export class PlacesService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
     ) {
-        this.apiKey = this.configService.get<string>('GOOGLE_PLACES_API_KEY');
+        this.apiKey = this.configService.getOrThrow<string>('GOOGLE_PLACES_API_KEY');
         
         if (!this.apiKey) {
             console.warn('GOOGLE_PLACES_API_KEY is not set. Places API will not work.');
@@ -179,6 +180,8 @@ export class PlacesService {
             if (error.response) {
                 const status = error.response.status;
                 const message = error.response.data?.error?.message || 'Unknown error';
+
+                this.logger.error(`Google Places API Error (${operation}) - Status: ${status}, Message: ${message}`, error.stack)
 
                 throw new HttpException(
                     `Google Places API Error (${operation}): ${message}`,
