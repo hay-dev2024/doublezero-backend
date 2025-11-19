@@ -1,3 +1,6 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpService } from '@nestjs/axios';
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -33,8 +36,6 @@ export class PlacesService {
     }
 
     async searchPlaces(query: string): Promise<PlaceResponseDto[]> {
-        this.checkApiKey();
-
         try {
             const response = await firstValueFrom(
                 this.httpService.post(
@@ -79,14 +80,13 @@ export class PlacesService {
         lat?: number,
         lon?: number,
     ): Promise<PlaceAutocompleteSuggestionDto[]> {
-        this.checkApiKey();
-
         try {
             const requestBody: any = {
                 input: input,
                 languageCode: 'en',
             };
             
+            // 가까운 곳부터 표시
             if (lat !== undefined && lon !== undefined) {
                 requestBody.locationBias = {
                     circle: {
@@ -132,8 +132,6 @@ export class PlacesService {
     }
 
     async getPlaceDetails(placeId: string): Promise<PlaceResponseDto> {
-        this.checkApiKey();
-
         try {
             const url = `${this.placeDetailsUrl}/${placeId}`;
             const response = await firstValueFrom(
@@ -165,15 +163,6 @@ export class PlacesService {
         }
     }
 
-    private checkApiKey(): void {
-        if (!this.apiKey) {
-            throw new HttpException(
-                'Google Places API key is not configured. Please add GOOGLE_PLACES_API_KEY to your .env file.',
-                HttpStatus.SERVICE_UNAVAILABLE,
-            );
-        }
-    }
-
     private handleError(error: any, operation: string): never {
         // axios error
         if (error.isAxiosError) {
@@ -181,8 +170,10 @@ export class PlacesService {
                 const status = error.response.status;
                 const message = error.response.data?.error?.message || 'Unknown error';
 
+                // 서버 로그에 기록
                 this.logger.error(`Google Places API Error (${operation}) - Status: ${status}, Message: ${message}`, error.stack)
 
+                // 클라이언트에게 전달
                 throw new HttpException(
                     `Google Places API Error (${operation}): ${message}`,
                     status,
@@ -196,6 +187,7 @@ export class PlacesService {
             );
         }
 
+        // 기타 에러
         throw new HttpException(
             `Failed to ${operation}`,
             HttpStatus.INTERNAL_SERVER_ERROR,
