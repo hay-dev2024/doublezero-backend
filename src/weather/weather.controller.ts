@@ -2,6 +2,7 @@ import { ClassSerializerInterceptor, Controller, Get, Query, UseInterceptors } f
 import { WeatherService } from './weather.service';
 import { WeatherQueryDto } from './dto/weather-query.dto';
 import { WeatherAiFeaturesDto } from './dto/weather-ai-features.dto';
+import { WeatherUiDto } from './dto/weather-ui.dto';
 
 @Controller('weather')
 @UseInterceptors(ClassSerializerInterceptor)

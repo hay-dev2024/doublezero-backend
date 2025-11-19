@@ -7,6 +7,7 @@ import { CommonModule } from './common/common.module';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { WeatherModule } from './weather/weather.module';
+import { PlacesModule } from './places/places.module';
 
 @Module({
   imports: [
@@ -25,7 +26,7 @@ import { WeatherModule } from './weather/weather.module';
     AuthModule, 
     NavigationModule, 
     HistoryModule, 
-    WeatherModule, 
+    WeatherModule, PlacesModule, 
   ],
   controllers: [],
   providers: [],

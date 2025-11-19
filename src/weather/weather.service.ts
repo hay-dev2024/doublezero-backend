@@ -2,7 +2,6 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { AxiosError } from 'axios';
 import { plainToInstance } from 'class-transformer';
 import { WeatherUiDto } from './dto/weather-ui.dto';
 import { WeatherAiFeaturesDto } from './dto/weather-ai-features.dto';
@@ -50,20 +49,24 @@ export class WeatherService {
     async getCurrentWeatherForAI(lat: number, lon: number): Promise<WeatherAiFeaturesDto> {
         try {
             const data = await this.fetchWeatherData(lat, lon);
-
-            // imperial 단위로 변환(AI)
+            
+            const tempC = data.main.temp;
+            const feelsLikeC = data.main.feels_like;
+            const windSpeedMs = data.wind.speed;
+            const visibilityM = data.visibility;
+            const pressureHPa = data.main.pressure;
+            
+            const rainMm = data.rain?.['1h'] || 0;
+            const snowMm = data.snow?.['1h'] || 0;
+            const totalPrecipMm = rainMm + snowMm;
+            
             const tempF = this.celsiusToFahrenheit(tempC);
             const feelsLikeF = this.celsiusToFahrenheit(feelsLikeC);
             const windSpeedMph = this.msToMph(windSpeedMs);
             const visibilityMi = this.metersToMiles(visibilityM);
             const pressureIn = this.hPaToInHg(pressureHPa);
             const precipitationIn = this.mmToInches(totalPrecipMm);
-
-            // 강수량
-            const rainMm = data.rain?.['1h'] || 0;
-            const snowMm = data.snow?.['1h'] || 0;
-            const totalPrecipMm = rainMm + snowMm;
-
+            
             const responseData = {
                 temperatureF: Math.round(tempF * 10) / 10,
                 windChillF: Math.round(feelsLikeF * 10) / 10,
@@ -73,15 +76,14 @@ export class WeatherService {
                 precipitationIn: Math.round(precipitationIn * 100) / 100,
                 humidity: data.main.humidity,
             };
-
+            
             return plainToInstance(WeatherAiFeaturesDto, responseData, {
                 excludeExtraneousValues: true,
             });
-        } catch(error) {
+        } catch (error) {
             this.handleError(error);
         }
     }
-
 
     // OpenWeather API 호출
     private async fetchWeatherData(lat: number, lon: number): Promise<any> {
@@ -92,7 +94,7 @@ export class WeatherService {
 
     // error handling
     private handleError(error: any): never {
-        if (error instanceof AxiosError) {
+        if (error.isAxiosError) {
             if (error.response) {
                 throw new HttpException(
                     `OpenWeather API Error: ${error.response.data?.message || 'Unknown error'}`,
