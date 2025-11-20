@@ -1,10 +1,12 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { plainToInstance } from 'class-transformer';
 import { WeatherUiDto } from './dto/weather-ui.dto';
 import { WeatherAiFeaturesDto } from './dto/weather-ai-features.dto';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 @Injectable()
 export class WeatherService {
@@ -15,6 +17,7 @@ export class WeatherService {
     constructor(
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
+        @Inject(CACHE_MANAGER) private cacheManager: Cache,
     ) {
         const apiKey = this.configService.getOrThrow<string>('OPENWEATHER_API_KEY');
         if (!apiKey) {
@@ -24,7 +27,18 @@ export class WeatherService {
     }
 
     async getCurrentWeatherForUI(lat: number, lon: number): Promise<WeatherUiDto> {
+        // cache
+        const cacheKey = `weather:ui:${lat},${lon}`;
+
+        const cached = await this.cacheManager.get<WeatherUiDto>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached weather UI data');
+            return cached;
+        }
+
         try {
+            this.logger.log(`Fetching weather UI data for [${lat}, ${lon}]`);
+
             const data = await this.fetchWeatherData(lat, lon);
 
             const responseData = {                
@@ -39,16 +53,30 @@ export class WeatherService {
                 visibility: Math.round(data.visibility / 100) / 10, 
             };
 
-            return plainToInstance(WeatherUiDto, responseData, {
+            const result =  plainToInstance(WeatherUiDto, responseData, {
                 excludeExtraneousValues: true,
             });
+
+            await this.cacheManager.set(cacheKey, result, 600000)
+
+            return result;
         } catch(error) {
-            this.handleError(error);
+            this.handleError(error, 'get weather AI data');
         }
     }
 
     async getCurrentWeatherForAI(lat: number, lon: number): Promise<WeatherAiFeaturesDto> {
+        const cacheKey = `weather:ai:${lat},${lon}`;
+        
+        const cached = await this.cacheManager.get<WeatherAiFeaturesDto>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached weather AI data');
+            return cached;
+        }
+
         try {
+            this.logger.log(`Fetching weather AI data for [${lat}, ${lon}]`);
+
             const data = await this.fetchWeatherData(lat, lon);
             
             const tempC = data.main.temp;
@@ -78,11 +106,17 @@ export class WeatherService {
                 humidity: data.main.humidity,
             };
             
-            return plainToInstance(WeatherAiFeaturesDto, responseData, {
+            const result = plainToInstance(WeatherAiFeaturesDto, responseData, {
                 excludeExtraneousValues: true,
             });
+
+            await this.cacheManager.set(cacheKey, result, 600000)
+
+            this.logger.log(`Weather AI data retrieved successfully for [${lat}, ${lon}]`);
+
+            return result;
         } catch (error) {
-            this.handleError(error);
+            this.handleError(error, 'get weather AI data');
         }
     }
 
@@ -94,19 +128,63 @@ export class WeatherService {
     }
 
     // error handling
-    private handleError(error: any): never {
+     private handleError(error: any, operation: string): never {
+        this.logger.error(`Failed to ${operation}: ${error?.message || 'Unknown error'}`, error?.stack);
+
         if (error?.isAxiosError) {
             if (error.response) {
                 const status = error.response.status;
-                const message = error.response.data?.message || 'Unknown error';
-                this.logger.error(`OpenWeather API Error - status: ${status}, message: ${message}`, error.stack);
-                throw new HttpException(`OpenWeather API Error: ${message}`, status);
+                const errorData = error.response.data;
+                const message = errorData?.message || 'Unknown error';
+
+                this.logger.debug(`HTTP ${status} Response: ${JSON.stringify(errorData)}`);
+
+                switch (status) {
+                    case 400:
+                        throw new HttpException(
+                            `Invalid request: ${message}`,
+                            HttpStatus.BAD_REQUEST,
+                        );
+                    case 401:
+                        throw new HttpException(
+                            `Weather API access denied. Check your API key. Details: ${message}`,
+                            HttpStatus.UNAUTHORIZED,
+                        );
+                    case 404:
+                        throw new HttpException(
+                            `Weather data not found for this location. Details: ${message}`,
+                            HttpStatus.NOT_FOUND,
+                        );
+                    case 429:
+                        throw new HttpException(
+                            'API rate limit exceeded. Please try again later.',
+                            HttpStatus.TOO_MANY_REQUESTS,
+                        );
+                    case 500:
+                    case 502:
+                    case 503:
+                        throw new HttpException(
+                            `Weather API service temporarily unavailable (HTTP ${status}). Please try again later.`,
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                        );
+                    default:
+                        throw new HttpException(
+                            `Weather API error (HTTP ${status}): ${message}`,
+                            status,
+                        );
+                }
             }
-            this.logger.error(`Network error: ${error.message}`, error.stack);
-            throw new HttpException(`Network error: ${error.message}`, HttpStatus.SERVICE_UNAVAILABLE);
+
+            throw new HttpException(
+                `Network error during ${operation}: ${error.message}`,
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
         }
-        this.logger.error('Failed to fetch weather data', error?.stack);
-        throw new HttpException('Failed to fetch weather data', HttpStatus.INTERNAL_SERVER_ERROR);
+
+        throw new HttpException(
+            `Failed to ${operation}: ${error?.message || 'Internal server error'}`,
+            HttpStatus.INTERNAL_SERVER_ERROR,
+        );
     }
 
     // 단위 변환 함수
