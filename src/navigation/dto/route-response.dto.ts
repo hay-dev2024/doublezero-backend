@@ -1,4 +1,4 @@
-import { Expose } from "class-transformer";
+import { Expose, Type } from "class-transformer";
 
 export class RouteResponseDto {
     @Expose()
@@ -17,5 +17,6 @@ export class RouteResponseDto {
 // 경로가 복수인 경우
 export class RoutesResponseDto {
     @Expose()
+    @Type(() => RouteResponseDto)
     routes: RouteResponseDto[];
 }
