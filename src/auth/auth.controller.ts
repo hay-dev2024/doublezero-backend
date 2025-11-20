@@ -2,7 +2,9 @@ import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtService } from '@nestjs/jwt';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
     constructor(
@@ -12,6 +14,7 @@ export class AuthController {
 
     // POST /auth/google - Google Login
     @Post('google')
+    @ApiOperation({ summary: 'Login with Google OAuth ID token' })
     async googleLogin(@Body() googleLoginDto: GoogleLoginDto) {
         return this.authService.validateGoogleToken(googleLoginDto.idToken);
     }
@@ -21,6 +24,7 @@ export class AuthController {
      * GET /auth/test-token?userId={userId}&email={email}
     */
    @Get('test-token')
+   @ApiOperation({ summary: 'Generate test JWT token (will be removed)' })
    async getTestToken(
     @Query('userId') userId: string,
     @Query('email') email: string,
