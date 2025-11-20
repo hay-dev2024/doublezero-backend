@@ -6,6 +6,8 @@ import { RouteRequestDto } from './dto/route-request.dto';
 import { RoutesResponseDto, RouteResponseDto } from './dto/route-response.dto';
 import { firstValueFrom } from 'rxjs';
 import { plainToInstance } from 'class-transformer';
+import { Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 
 @Injectable()
 export class NavigationService {
@@ -16,13 +18,22 @@ export class NavigationService {
     constructor(
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
+        @Inject(CACHE_MANAGER) private cacheManager: Cache,
     ) {
         this.apiKey = this.configService.getOrThrow<string>('GOOGLE_PLACES_API_KEY');
     }
 
     async calculateRoute(dto: RouteRequestDto): Promise<RoutesResponseDto> {
-        try {
+        // cache
+        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${dto.travelMode || 'DRIVE'}`;
 
+        const cached = await this.cacheManager.get<RouteResponseDto>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached route');
+            return cached;
+        }
+
+        try {
             this.logger.log(`Calculating route from [${dto.origin.lat}, ${dto.origin.lon}] to [${dto.destination.lat}, ${dto.destination.lon}]`);
 
             const response = await firstValueFrom(
@@ -55,14 +66,14 @@ export class NavigationService {
                         headers: {
                             'Content-Type': 'application/json',
                             'X-Goog-Api-Key': this.apiKey,
-                            'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description',
+                            'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.viewport,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline,routes.legs.steps.navigationInstruction',
                         },
                     },
                 ),
             );
 
             this.logger.log(`API Response received, status: ${response.status}`);
-            console.log('Google API Raw Response:', JSON.stringify(response.data, null, 2));
+            // console.log('Google API Raw Response:', JSON.stringify(response.data, null, 2));
 
             const routes = response.data.routes || [];
 
@@ -76,6 +87,25 @@ export class NavigationService {
                 const distanceKm = (route.distanceMeters / 1000).toFixed(1);
                 const durationMin = Math.round(parseFloat(route.duration.replace('s', '')) / 60);
 
+                const warnings = route.warnings || [];
+                const bounds = route.viewport ? {
+                    northeast: {
+                        lat: route.viewport.high.latitude,
+                        lon: route.viewport.high.longitude
+                    },
+                    southwest: {
+                        lat: route.viewport.low.latitude,
+                        lon: route.viewport.low.longitude
+                    }
+                } : undefined;
+
+                const steps = route.legs?.[0]?.steps?.map((step: any) => ({
+                    distance: step.localizedValues?.distance?.text || `${(step.distanceMeters / 1000).toFixed(1)} km`,
+                    duration: step.localizedValue?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
+                    instruction: step.navigationInstruction?.instructions || '',
+                    polyline: step.polyline?.encodedPolyline || '',
+                })) || [];
+
                 return plainToInstance(
                     RouteResponseDto,
                     {
@@ -83,6 +113,9 @@ export class NavigationService {
                         duration: `${durationMin} min`,
                         summary: route.description || 'route',
                         polyline: route.polyline?.encodedPolyline || '',
+                        warnings,
+                        bounds,
+                        steps,
                     },
                     { excludeExtraneousValues: true },
                 );
@@ -90,35 +123,76 @@ export class NavigationService {
 
             this.logger.log(`Successfully calculated ${routeDtos.length} route(s)`);
 
-            return plainToInstance(
+            const result = plainToInstance(
                 RoutesResponseDto,
                 { routes: routeDtos },
                 { excludeExtraneousValues: true },
             );
+
+            // cache
+            await this.cacheManager.set(cacheKey, result, 3600);
+
+            return result;
         } catch(error) {
-            this.logger.error(`Route calculation failed: ${error.message}`);
-            
-            if (error.response) {
-                this.logger.error(`HTTP Status: ${error.response.status}`);
-                this.logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
-            }
-            
             this.handleError(error, 'calculate route');
         }
     }
 
     private handleError(error: any, operation: string): never {
-        if (error?.isAxiosError) {
-            if (error.response) {               
+        this.logger.error(`Failed to ${operation}: ${error?.message || 'Unknown error'}`, error?.stack);
+
+        if (isAxiosError(error)) {
+            if (error.response) {
                 const status = error.response.status;
-                const message = error.response.data?.error?.message || 'Unknown error';
-                this.logger.error(`Google Routes API Error (${operation}) - status: ${status}, message: ${message}`, error.stack);
-                throw new HttpException(`Google Routes API Error (${operation}): ${message}`, status);
+                const errorData = error.response.data;
+                const message = errorData?.error?.message || errorData?.message || 'Uknown error';
+
+                this.logger.debug(`HTTP ${status} Response: ${JSON.stringify(errorData)}`);
+
+                switch (status) {
+                    case 400:
+                        throw new HttpException(
+                            `Invalid request: ${message}`,
+                            HttpStatus.BAD_REQUEST,
+                        );
+                    case 401:
+                    case 403:
+                        throw new HttpException(
+                            `Routes API access denied (HTTP ${status}). Check your API key and ensure Routes API is enabled. Details: ${message}`,
+                            status,
+                        );
+                    case 404:
+                        throw new HttpException(
+                            `Route not found. This region may not be supported by Routes API. Details: ${message}`,
+                            HttpStatus.NOT_FOUND,
+                        );
+                    case 429:
+                        throw new HttpException(
+                            'API rate limit exceeded. Please try again later.',
+                            HttpStatus.TOO_MANY_REQUESTS,
+                        );
+                    case 500:
+                    case 502:
+                    case 503:
+                        throw new HttpException(
+                            `Google API service temporarily unavailable (HTTP ${status}). Please try again later.`,
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                        );
+                    default:
+                        throw new HttpException(
+                            `Google Routes API error (HTTP ${status}): ${message}`,
+                            status,
+                        );
+                }
             }
-            this.logger.error(`Network error during ${operation}: ${error.message}`, error.stack);
-            throw new HttpException(`Network error during ${operation}: ${error.message}`, HttpStatus.SERVICE_UNAVAILABLE);
+            throw new HttpException(
+                `Network error during ${operation}: ${error.message}`,
+                HttpStatus.SERVICE_UNAVAILABLE,
+            );
         }
-        this.logger.error(`Failed to ${operation}`, error?.stack);
-        throw new HttpException(`Failed to ${operation}`, HttpStatus.INTERNAL_SERVER_ERROR);
+        throw new HttpException(
+            `Failed to ${operation}: ${error?.message || 'Internal server error'}`,
+            HttpStatus.INTERNAL_SERVER_ERROR,
+        );
     }
 }
