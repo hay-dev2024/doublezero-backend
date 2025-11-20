@@ -2,12 +2,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpService } from '@nestjs/axios';
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlaceAutocompleteSuggestionDto, PlaceResponseDto } from './dto/place-response.dto';
 import { firstValueFrom } from 'rxjs';
 import { plainToInstance } from 'class-transformer';
-
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 // Google Places API FieldMask 상수
 const PLACE_FIELD_MASKS = {
@@ -27,6 +28,7 @@ export class PlacesService {
     constructor(
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
+        @Inject(CACHE_MANAGER) private cacheManager: Cache,
     ) {
         this.apiKey = this.configService.getOrThrow<string>('GOOGLE_PLACES_API_KEY');
         
@@ -36,6 +38,15 @@ export class PlacesService {
     }
 
     async searchPlaces(query: string): Promise<PlaceResponseDto[]> {
+        // cache
+        const cacheKey = `places:search:${query}`;
+
+        const cached = await this.cacheManager.get<PlaceResponseDto[]>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached search results');
+            return cached;
+        }
+
         try {
             const response = await firstValueFrom(
                 this.httpService.post(
@@ -56,7 +67,7 @@ export class PlacesService {
 
             const places = response.data.places || [];
 
-            return places.map((place: any) => 
+            const result = places.map((place: any) => 
                 plainToInstance(
                     PlaceResponseDto,
                     {
@@ -70,6 +81,10 @@ export class PlacesService {
                     { excludeExtraneousValues: true },
                 ),
             );
+
+            await this.cacheManager.set(cacheKey, result, 300);
+
+            return result;
         } catch(error) {
             this.handleError(error, 'search places');
         }
@@ -80,6 +95,15 @@ export class PlacesService {
         lat?: number,
         lon?: number,
     ): Promise<PlaceAutocompleteSuggestionDto[]> {
+        // cache
+        const cacheKey = `places:autocomplete:${input}${lat !== undefined && lon !== undefined ? `:${lat},${lon}` : ''}`;
+
+        const cached = await this.cacheManager.get<PlaceAutocompleteSuggestionDto[]>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached autocomplete results');
+            return cached;
+        }
+
         try {
             const requestBody: any = {
                 input: input,
@@ -111,7 +135,7 @@ export class PlacesService {
 
             const suggestion = response.data.suggestions || [];
 
-            return suggestion
+            const result = suggestion
             .filter((s: any) => s.placePrediction)
             .map((suggestion: any) => {
                 const prediction = suggestion.placePrediction;
@@ -126,12 +150,25 @@ export class PlacesService {
                     { excludeExtraneousValues: true },
                 );
             });
+
+            await this.cacheManager.set(cacheKey, result, 300);
+
+            return result;
         } catch (error) {
             this.handleError(error, 'autocomplete places');
         }
     }
 
     async getPlaceDetails(placeId: string): Promise<PlaceResponseDto> {
+        // cache
+        const cacheKey = `places:details:${placeId}`;
+
+        const cached = await this.cacheManager.get<PlaceResponseDto>(cacheKey);
+        if (cached) {
+            this.logger.log('Returning cached place details');
+            return cached;
+        }
+
         try {
             const url = `${this.placeDetailsUrl}/${placeId}`;
             const response = await firstValueFrom(
@@ -146,7 +183,7 @@ export class PlacesService {
 
             const place = response.data;
 
-            return plainToInstance(
+            const result = plainToInstance(
                 PlaceResponseDto,
                 {
                     placeId: place.id,
@@ -158,38 +195,71 @@ export class PlacesService {
                 },
                 { excludeExtraneousValues: true },
             );
+
+            await this.cacheManager.set(cacheKey, result, 3600);
+
+            return result;
         } catch (error) {
             this.handleError(error, 'get place details');
         }
     }
 
     private handleError(error: any, operation: string): never {
-        // axios error
-        if (error.isAxiosError) {
+        this.logger.error(`Failed to ${operation}: ${error?.message || 'Unknown error'}`, error?.stack);
+
+        if (error?.isAxiosError) {
             if (error.response) {
                 const status = error.response.status;
-                const message = error.response.data?.error?.message || 'Unknown error';
+                const errorData = error.response.data;
+                const message = errorData?.error?.message || errorData?.message || 'Unknown error';
 
-                // 서버 로그에 기록
-                this.logger.error(`Google Places API Error (${operation}) - Status: ${status}, Message: ${message}`, error.stack)
+                this.logger.debug(`HTTP ${status} Response: ${JSON.stringify(errorData)}`);
 
-                // 클라이언트에게 전달
-                throw new HttpException(
-                    `Google Places API Error (${operation}): ${message}`,
-                    status,
-                );
+                switch (status) {
+                    case 400:
+                        throw new HttpException(
+                            `Invalid request: ${message}`,
+                            HttpStatus.BAD_REQUEST,
+                        );
+                    case 401:
+                    case 403:
+                        throw new HttpException(
+                            `Places API access denied (HTTP ${status}). Check your API key. Details: ${message}`,
+                            status,
+                        );
+                    case 404:
+                        throw new HttpException(
+                            `Place not found. Details: ${message}`,
+                            HttpStatus.NOT_FOUND,
+                        );
+                    case 429:
+                        throw new HttpException(
+                            'API rate limit exceeded. Please try again later.',
+                            HttpStatus.TOO_MANY_REQUESTS,
+                        );
+                    case 500:
+                    case 502:
+                    case 503:
+                        throw new HttpException(
+                            `Google API service temporarily unavailable (HTTP ${status}). Please try again later.`,
+                            HttpStatus.SERVICE_UNAVAILABLE,
+                        );
+                    default:
+                        throw new HttpException(
+                            `Google Places API error (HTTP ${status}): ${message}`,
+                            status,
+                        );
+                }
             }
 
-            // network error, timeout, etc
             throw new HttpException(
                 `Network error during ${operation}: ${error.message}`,
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
 
-        // 기타 에러
         throw new HttpException(
-            `Failed to ${operation}`,
+            `Failed to ${operation}: ${error?.message || 'Internal server error'}`,
             HttpStatus.INTERNAL_SERVER_ERROR,
         );
     }

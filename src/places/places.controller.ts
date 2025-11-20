@@ -3,7 +3,9 @@ import { PlacesService } from './places.service';
 import { PlaceSearchDto } from './dto/place-search.dto';
 import { PlaceAutocompleteSuggestionDto, PlaceResponseDto } from './dto/place-response.dto';
 import { PlaceAutocompleteDto } from './dto/place-autocomplete.dto';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
+@ApiTags('Places')
 @Controller('places')
 @UseInterceptors(ClassSerializerInterceptor)
 export class PlacesController {
@@ -14,6 +16,7 @@ export class PlacesController {
    * Body: { "query": "KingsCross" }
    */
     @Post('search')
+    @ApiOperation({ summary: 'Search places by text query' })
     async searchPlaces(
         @Body() dto: PlaceSearchDto,
     ): Promise<PlaceResponseDto[]> {
@@ -21,6 +24,7 @@ export class PlacesController {
     }
 
     @Get('autocomplete')
+    @ApiOperation({ summary: 'Autocomplete place search' })
     async autocompletePlaces(
         @Query() dto: PlaceAutocompleteDto,
     ): Promise<PlaceAutocompleteSuggestionDto[]> {
@@ -28,6 +32,7 @@ export class PlacesController {
     }
 
     @Get(':placeId')
+    @ApiOperation({ summary: 'Get detailed place information by ID' })
     async getPlaceDetails(
         @Param('placeId') placeId: string,
     ): Promise<PlaceResponseDto> {
