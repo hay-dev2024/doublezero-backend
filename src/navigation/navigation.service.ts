@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { HttpService } from '@nestjs/axios';
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { RouteRequestDto } from './dto/route-request.dto';
 import { RoutesResponseDto, RouteResponseDto } from './dto/route-response.dto';
 import { firstValueFrom } from 'rxjs';
 import { plainToInstance } from 'class-transformer';
-import { Inject } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 
 @Injectable()
 export class NavigationService {
@@ -27,7 +27,7 @@ export class NavigationService {
         // cache
         const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${dto.travelMode || 'DRIVE'}`;
 
-        const cached = await this.cacheManager.get<RouteResponseDto>(cacheKey);
+        const cached = await this.cacheManager.get<RoutesResponseDto>(cacheKey);
         if (cached) {
             this.logger.log('Returning cached route');
             return cached;
@@ -57,7 +57,6 @@ export class NavigationService {
                             },
                         },
                         travelMode: dto.travelMode || 'DRIVE',
-                        //routingPreference: 'TRAFFIC_AWARE',
                         computeAlternativeRoutes: false,
                         languageCode: 'en',
                         units: 'METRIC',
@@ -73,14 +72,16 @@ export class NavigationService {
             );
 
             this.logger.log(`API Response received, status: ${response.status}`);
-            // console.log('Google API Raw Response:', JSON.stringify(response.data, null, 2));
 
             const routes = response.data.routes || [];
 
-            // routes가 빈 배열인 경우
             if (routes.length === 0) {
                 this.logger.warn('No routes found');
-                return plainToInstance(RoutesResponseDto, { routes: [] });
+                return plainToInstance(
+                    RoutesResponseDto,
+                    { routes: [] },
+                    { excludeExtraneousValues: true },
+                );
             }
 
             const routeDtos = routes.map((route: any) => {
@@ -91,17 +92,17 @@ export class NavigationService {
                 const bounds = route.viewport ? {
                     northeast: {
                         lat: route.viewport.high.latitude,
-                        lon: route.viewport.high.longitude
+                        lon: route.viewport.high.longitude,
                     },
                     southwest: {
                         lat: route.viewport.low.latitude,
-                        lon: route.viewport.low.longitude
-                    }
+                        lon: route.viewport.low.longitude,
+                    },
                 } : undefined;
 
                 const steps = route.legs?.[0]?.steps?.map((step: any) => ({
                     distance: step.localizedValues?.distance?.text || `${(step.distanceMeters / 1000).toFixed(1)} km`,
-                    duration: step.localizedValue?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
+                    duration: step.localizedValues?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
                     instruction: step.navigationInstruction?.instructions || '',
                     polyline: step.polyline?.encodedPolyline || '',
                 })) || [];
@@ -129,11 +130,10 @@ export class NavigationService {
                 { excludeExtraneousValues: true },
             );
 
-            // cache
             await this.cacheManager.set(cacheKey, result, 3600);
 
             return result;
-        } catch(error) {
+        } catch (error: any) {
             this.handleError(error, 'calculate route');
         }
     }
@@ -141,11 +141,11 @@ export class NavigationService {
     private handleError(error: any, operation: string): never {
         this.logger.error(`Failed to ${operation}: ${error?.message || 'Unknown error'}`, error?.stack);
 
-        if (isAxiosError(error)) {
+        if (error?.isAxiosError) {
             if (error.response) {
                 const status = error.response.status;
                 const errorData = error.response.data;
-                const message = errorData?.error?.message || errorData?.message || 'Uknown error';
+                const message = errorData?.error?.message || errorData?.message || 'Unknown error';
 
                 this.logger.debug(`HTTP ${status} Response: ${JSON.stringify(errorData)}`);
 
@@ -185,11 +185,13 @@ export class NavigationService {
                         );
                 }
             }
+
             throw new HttpException(
                 `Network error during ${operation}: ${error.message}`,
                 HttpStatus.SERVICE_UNAVAILABLE,
             );
         }
+
         throw new HttpException(
             `Failed to ${operation}: ${error?.message || 'Internal server error'}`,
             HttpStatus.INTERNAL_SERVER_ERROR,
