@@ -7,7 +7,7 @@ export class GoogleLoginDto {
         example: 'afdsiOiJSUzI1NiI342sImtpZCIafdsadkazcifQ.eyJpc3MiOisfdafdv1basfdas5af234OiIzMDc...',
         description: 'Google OAuth ID token from client-side authentication',
     })
-    @IsString({ message: 'ID token must ne a string' })
+    @IsString({ message: 'ID token must be a string' })
     @IsNotEmpty({ message: 'ID token is required' })
     idToken: string;
 }

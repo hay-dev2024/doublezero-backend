@@ -37,7 +37,7 @@ export class AuthController {
 
     return {
         accessToken,
-        message: 'Test Token. Remove this endpoint before diployment.'
+        message: 'Test Token. Remove this endpoint before deployment.'
     };
    }
 }
