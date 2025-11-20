@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { GoogleLoginDto } from './dto/google-login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Types } from 'mongoose';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -29,15 +30,25 @@ export class AuthController {
     @Query('userId') userId: string,
     @Query('email') email: string,
    ) {
+    
+    let validUserId: string;
+
+    if (userId && Types.ObjectId.isValid(userId)) {
+        validUserId = userId;
+    } else {
+        validUserId = new Types.ObjectId().toString();
+    }
+
     // Temp JWT
     const accessToken = this.jwtService.sign({
-        sub: userId || '507f1f77bcf86cd799439011',
+        sub: validUserId,
         email: email || 'test@mail.com',
     });
 
     return {
         accessToken,
-        message: 'Test Token. Remove this endpoint before deployment.'
+        message: 'Test Token (Dev Only)',
+        userId: validUserId,
     };
    }
 }
