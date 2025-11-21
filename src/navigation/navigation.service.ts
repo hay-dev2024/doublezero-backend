@@ -14,6 +14,18 @@ export class NavigationService {
     private readonly logger = new Logger(NavigationService.name);
     private readonly apiKey: string;
     private readonly routesUrl = 'https://routes.googleapis.com/directions/v2:computeRoutes';
+    private readonly fieldMask = [
+        'routes.distanceMeters',
+        'routes.duration',
+        'routes.polyline.encodedPolyline',
+        'routes.description',
+        'routes.warnings',
+        'routes.viewport',
+        'routes.legs.steps.distanceMeters',
+        'routes.legs.steps.staticDuration',
+        'routes.legs.steps.polyline.encodedPolyline',
+        'routes.legs.steps.navigationInstruction',
+    ].join(',');
 
     constructor(
         private readonly httpService: HttpService,
@@ -24,8 +36,9 @@ export class NavigationService {
     }
 
     async calculateRoute(dto: RouteRequestDto): Promise<RoutesResponseDto> {
+        const travelMode = dto.travelMode ?? 'DRIVE';
         // cache
-        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${dto.travelMode || 'DRIVE'}`;
+        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}`;
 
         const cached = await this.cacheManager.get<RoutesResponseDto>(cacheKey);
         if (cached) {
@@ -56,7 +69,7 @@ export class NavigationService {
                                 },
                             },
                         },
-                        travelMode: dto.travelMode || 'DRIVE',
+                        travelMode,
                         computeAlternativeRoutes: false,
                         languageCode: 'en',
                         units: 'METRIC',
@@ -65,7 +78,7 @@ export class NavigationService {
                         headers: {
                             'Content-Type': 'application/json',
                             'X-Goog-Api-Key': this.apiKey,
-                            'X-Goog-FieldMask': 'routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline,routes.description,routes.warnings,routes.viewport,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.polyline.encodedPolyline,routes.legs.steps.navigationInstruction',
+                            'X-Goog-FieldMask': this.fieldMask,
                         },
                     },
                 ),
@@ -84,46 +97,10 @@ export class NavigationService {
                 );
             }
 
-            const routeDtos = routes.map((route: any) => {
-                const distanceKm = (route.distanceMeters / 1000).toFixed(1);
-                const durationMin = Math.round(parseFloat(route.duration.replace('s', '')) / 60);
-
-                const warnings = route.warnings || [];
-                const bounds = route.viewport ? {
-                    northeast: {
-                        lat: route.viewport.high.latitude,
-                        lon: route.viewport.high.longitude,
-                    },
-                    southwest: {
-                        lat: route.viewport.low.latitude,
-                        lon: route.viewport.low.longitude,
-                    },
-                } : undefined;
-
-                const steps = route.legs?.[0]?.steps?.map((step: any) => ({
-                    distance: step.localizedValues?.distance?.text || `${(step.distanceMeters / 1000).toFixed(1)} km`,
-                    duration: step.localizedValues?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
-                    instruction: step.navigationInstruction?.instructions || '',
-                    polyline: step.polyline?.encodedPolyline || '',
-                })) || [];
-
-                return plainToInstance(
-                    RouteResponseDto,
-                    {
-                        distance: `${distanceKm} km`,
-                        duration: `${durationMin} min`,
-                        summary: route.description || 'route',
-                        polyline: route.polyline?.encodedPolyline || '',
-                        warnings,
-                        bounds,
-                        steps,
-                    },
-                    { excludeExtraneousValues: true },
-                );
-            });
+            const routeDtos = routes.map((route: any) => this.transformRouteToDto(route));
 
             this.logger.log(`Successfully calculated ${routeDtos.length} route(s)`);
-
+ 
             const result = plainToInstance(
                 RoutesResponseDto,
                 { routes: routeDtos },
@@ -136,6 +113,45 @@ export class NavigationService {
         } catch (error: any) {
             this.handleError(error, 'calculate route');
         }
+    }
+
+    private transformRouteToDto(route: any): RouteResponseDto {
+            const distanceKm = (route.distanceMeters / 1000).toFixed(1);
+            const durationMin = Math.round(parseFloat(route.duration.replace('s', '')) / 60);
+
+            const warnings = route.warnings || [];
+
+            const bounds = route.viewport ? {
+                northeast: {
+                    lat: route.viewport.high.latitude,
+                    lon: route.viewport.high.longitude,
+                },
+                southwest: {
+                    lat: route.viewport.low.latitude,
+                    lon: route.viewport.low.longitude,
+                },
+            } : undefined;
+
+            const steps = route.legs?.[0]?.steps?.map((step: any) => ({
+                distance: step.localizedValues?.distance?.text || `${(step.distanceMeters / 1000).toFixed(1)} km`,
+                duration: step.localizedValues?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
+                instruction: step.navigationInstruction?.instructions || '',
+                polyline: step.polyline?.encodedPolyline || '',
+            })) || [];
+
+            return plainToInstance(
+                RouteResponseDto,
+                {
+                    distance: `${distanceKm} km`,
+                    duration: `${durationMin} min`,
+                    summary: route.description || 'route',
+                    polyline: route.polyline?.encodedPolyline || '',
+                    warnings,
+                    bounds,
+                    steps,
+                },
+                { excludeExtraneousValues: true },
+            );
     }
 
     private handleError(error: any, operation: string): never {
