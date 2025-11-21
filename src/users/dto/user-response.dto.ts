@@ -7,7 +7,7 @@ export class UserResponseDto {
         description: 'User ID',
     })
     @Expose()
-    @Transform(({ obj }) => String(obj._id))
+    @Transform(({ obj }) => String(obj._id || obj.id))
     id: string;
 
     @ApiProperty({
