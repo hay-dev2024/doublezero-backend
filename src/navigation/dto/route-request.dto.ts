@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max } from "class-validator";
+import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max, IsBoolean } from "class-validator";
 
 class LocationDto {
     @ApiProperty({ 
@@ -53,4 +53,13 @@ export class RouteRequestDto {
     @IsOptional()
     @IsEnum(['DRIVE', 'BICYCLE', 'WALK', 'TWO_WHEELER'])
     travelMode?: string = 'DRIVE';
+
+    @ApiProperty({
+        example: false,
+        description: 'Whether to request one alternative route in addition to the primary route',
+        required: false,
+    })
+    @IsOptional()
+    @IsBoolean()
+    alternatives?: boolean = false;
 }

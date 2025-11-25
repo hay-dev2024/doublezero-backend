@@ -41,6 +41,9 @@ export class RouteResponseDto {
             {
                 distance: '5.2 km',
                 duration: '4 min',
+                distanceMeters: 5200,
+                durationSeconds: 240,
+                maneuver: 'turn-right',
                 instruction: 'Head south on US-101 S',
                 polyline: '...'
             }
@@ -52,6 +55,9 @@ export class RouteResponseDto {
     steps?: Array<{
         distance: string;
         duration: string;
+        distanceMeters?: number;
+        durationSeconds?: number;
+        maneuver?: string;
         instruction: string;
         polyline: string;
     }>;

@@ -37,8 +37,8 @@ export class NavigationService {
 
     async calculateRoute(dto: RouteRequestDto): Promise<RoutesResponseDto> {
         const travelMode = dto.travelMode ?? 'DRIVE';
-        // cache
-        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}`;
+        // cache (include alternatives flag)
+        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}:alt=${dto.alternatives ? '1' : '0'}`;
 
         const cached = await this.cacheManager.get<RoutesResponseDto>(cacheKey);
         if (cached) {
@@ -70,7 +70,7 @@ export class NavigationService {
                             },
                         },
                         travelMode,
-                        computeAlternativeRoutes: false,
+                            computeAlternativeRoutes: dto.alternatives ?? false,
                         languageCode: 'en',
                         units: 'METRIC',
                     },
@@ -99,11 +99,15 @@ export class NavigationService {
 
             const routeDtos = routes.map((route: any) => this.transformRouteToDto(route));
 
-            this.logger.log(`Successfully calculated ${routeDtos.length} route(s)`);
+            // Limit results: if alternatives requested, allow primary + one alternative, otherwise only primary
+            const maxRoutes = dto.alternatives ? 2 : 1;
+            const limited = routeDtos.slice(0, maxRoutes);
+
+            this.logger.log(`Successfully calculated ${routeDtos.length} route(s), returning ${limited.length}`);
  
             const result = plainToInstance(
                 RoutesResponseDto,
-                { routes: routeDtos },
+                { routes: limited },
                 { excludeExtraneousValues: true },
             );
 
@@ -132,12 +136,40 @@ export class NavigationService {
                 },
             } : undefined;
 
-            const steps = route.legs?.[0]?.steps?.map((step: any) => ({
-                distance: step.localizedValues?.distance?.text || `${(step.distanceMeters / 1000).toFixed(1)} km`,
-                duration: step.localizedValues?.staticDuration?.text || `${Math.round(parseFloat(step.staticDuration.replace('s', '')) / 60)} min`,
-                instruction: step.navigationInstruction?.instructions || '',
-                polyline: step.polyline?.encodedPolyline || '',
-            })) || [];
+            const steps = route.legs?.[0]?.steps?.map((step: any) => {
+                // numeric distance in meters
+                let distanceMeters: number | undefined;
+                if (typeof step.distanceMeters === 'number') {
+                    distanceMeters = step.distanceMeters;
+                } else if (step.distanceMeters) {
+                    const parsed = Number(step.distanceMeters);
+                    distanceMeters = Number.isFinite(parsed) ? parsed : undefined;
+                }
+
+                // numeric duration in seconds
+                let durationSeconds: number | undefined;
+                if (typeof step.staticDuration === 'number') {
+                    durationSeconds = step.staticDuration;
+                } else if (typeof step.staticDuration === 'string') {
+                    const m = step.staticDuration.match(/(\d+)/);
+                    if (m) durationSeconds = Number(m[1]);
+                }
+
+                const distanceText = step.localizedValues?.distance?.text || (distanceMeters ? `${(distanceMeters / 1000).toFixed(1)} km` : '');
+                const durationText = step.localizedValues?.staticDuration?.text || (durationSeconds ? `${Math.round(durationSeconds / 60)} min` : '');
+
+                const maneuver = step.navigationInstruction?.maneuver || step.maneuver || undefined;
+
+                return {
+                    distance: distanceText,
+                    duration: durationText,
+                    distanceMeters,
+                    durationSeconds,
+                    maneuver,
+                    instruction: step.navigationInstruction?.instructions || '',
+                    polyline: step.polyline?.encodedPolyline || '',
+                };
+            }) || [];
 
             return plainToInstance(
                 RouteResponseDto,
