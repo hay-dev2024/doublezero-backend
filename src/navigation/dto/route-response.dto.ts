@@ -63,7 +63,7 @@ export class RouteResponseDto {
     }>;
 
     @ApiProperty({ 
-        example: { hasTolls: false, hasHighway: true },
+        example: { hasTolls: false, hasHighways: true },
         description: 'Traffic information',
         required: false, 
     })
@@ -79,6 +79,23 @@ export class RoutesResponseDto {
     @ApiProperty({
         type: [RouteResponseDto],
         description: 'List of available routes',
+        example: {
+            routes: [
+                {
+                    distance: '14.8 km',
+                    duration: '22 min',
+                    summary: 'CA-85 S and W Fremont Ave',
+                    polyline: 'encoded_polyline_here',
+                    bounds: {
+                        northeast: { lat: 37.4233338, lon: -122.0305778 },
+                        southwest: { lat: 37.3302298, lon: -122.0837855 }
+                    },
+                    steps: [
+                        { distance: '0.1 km', distanceMeters: 54, duration: '0 min', durationSeconds: 11, maneuver: 'DEPART', instruction: 'Head east', polyline: '...' }
+                    ]
+                }
+            ]
+        }
     })
     @Expose()
     @Type(() => RouteResponseDto)
