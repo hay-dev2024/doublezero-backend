@@ -1,5 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Expose, Type } from "class-transformer";
+import { RiskPointDto } from "src/ai/dto/risk-point.dto";
 
 export class RouteResponseDto {
     @ApiProperty({ example: '77.8 km', description: 'Total distance' })
@@ -72,6 +73,18 @@ export class RouteResponseDto {
         hasTolls: boolean;
         hasHighways: boolean;
     };
+
+    @ApiProperty({
+        type: [RiskPointDto],
+        description: 'Risk heatmap data points for this route',
+        required: false,
+        example: [
+            { lat: 37.4219999, lng: -122.0840575, tier: 1, severity3Probability: 0.2098 },
+            { lat: 37.4220123, lng: -122.0841234, tier: 0, severity3Probability: 0.0488 },
+        ],
+    })
+    @Expose()
+    riskPoints?: RiskPointDto[];
 }
 
 // 경로가 복수인 경우

@@ -8,6 +8,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { WeatherModule } from './weather/weather.module';
 import { PlacesModule } from './places/places.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { PlacesModule } from './places/places.module';
     NavigationModule, 
     HistoryModule, 
     WeatherModule, PlacesModule, 
+    AiModule, 
   ],
   controllers: [],
   providers: [],

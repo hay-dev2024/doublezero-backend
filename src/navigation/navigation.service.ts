@@ -8,6 +8,11 @@ import { RoutesResponseDto, RouteResponseDto } from './dto/route-response.dto';
 import { firstValueFrom } from 'rxjs';
 import { plainToInstance } from 'class-transformer';
 import type { Cache } from 'cache-manager';
+import { decode } from '@googlemaps/polyline-codec';
+import { AiModelService } from 'src/ai/ai-model.service';
+import { WeatherService } from 'src/weather/weather.service';
+import { RiskPointDto } from 'src/ai/dto/risk-point.dto';
+import { PredictRequestDto } from 'src/ai/dto/predict-request.dto';
 
 @Injectable()
 export class NavigationService {
@@ -31,6 +36,8 @@ export class NavigationService {
         private readonly httpService: HttpService,
         private readonly configService: ConfigService,
         @Inject(CACHE_MANAGER) private cacheManager: Cache,
+        private readonly aiModelService: AiModelService,
+        private readonly weatherService: WeatherService,
     ) {
         this.apiKey = this.configService.getOrThrow<string>('GOOGLE_PLACES_API_KEY');
     }
@@ -85,11 +92,13 @@ export class NavigationService {
             );
 
             this.logger.log(`API Response received, status: ${response.status}`);
+            this.logger.debug(`Response data: ${JSON.stringify(response.data)}`);
 
             const routes = response.data.routes || [];
 
             if (routes.length === 0) {
-                this.logger.warn('No routes found');
+                this.logger.warn('No routes found in response');
+                this.logger.debug(`Full response data: ${JSON.stringify(response.data, null, 2)}`);
                 return plainToInstance(
                     RoutesResponseDto,
                     { routes: [] },
@@ -102,6 +111,22 @@ export class NavigationService {
             // Limit results: if alternatives requested, allow primary + one alternative, otherwise only primary
             const maxRoutes = dto.alternatives ? 2 : 1;
             const limited = routeDtos.slice(0, maxRoutes);
+
+            // Generate risk points for the first route
+            if (limited.length > 0 && limited[0].polyline) {
+                try {
+                    const riskPoints = await this.generateRiskPoints(
+                        dto.origin,
+                        dto.destination,
+                        limited[0].polyline,
+                    );
+                    limited[0].riskPoints = riskPoints;
+                    this.logger.log(`Generated ${riskPoints.length} risk points for primary route`);
+                } catch (error: any) {
+                    this.logger.warn(`Failed to generate risk points: ${error?.message}`);
+                    limited[0].riskPoints = []; // fallback
+                }
+            }
 
             this.logger.log(`Successfully calculated ${routeDtos.length} route(s), returning ${limited.length}`);
  
@@ -244,5 +269,78 @@ export class NavigationService {
             `Failed to ${operation}: ${error?.message || 'Internal server error'}`,
             HttpStatus.INTERNAL_SERVER_ERROR,
         );
+    }
+
+    /**
+     * Generate risk points along the route by sampling coordinates and calling AI model
+     */
+    private async generateRiskPoints(
+        origin: { lat: number; lon: number },
+        destination: { lat: number; lon: number },
+        encodedPolyline: string,
+    ): Promise<RiskPointDto[]> {
+        try {
+            // Decode polyline to get array of [lat, lng] coordinates
+            const coordinates = decode(encodedPolyline, 5); // precision 5 for Google polylines
+            
+            // Sample points along route (limit to ~15 points to avoid excessive API calls)
+            const sampleSize = Math.min(15, coordinates.length);
+            const step = Math.floor(coordinates.length / sampleSize) || 1;
+            const sampledCoordinates = coordinates.filter((_, index) => index % step === 0);
+            
+            this.logger.log(
+                `Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`,
+            );
+
+            // Generate risk predictions for each sampled point
+            const riskPoints: RiskPointDto[] = [];
+            const currentTime = new Date();
+
+            for (const [lat, lng] of sampledCoordinates) {
+                try {
+                    // Fetch weather data for this coordinate
+                    const weather = await this.weatherService.getCurrentWeatherForAI(lat, lng);
+
+                    // Prepare AI model request with weather data and current time
+                    const predictRequest: PredictRequestDto = {
+                        Start_Time: currentTime.toISOString(),
+                        Visibility_mi: weather.visibilityMi,
+                        Wind_Speed_mph: weather.windSpeedMph,
+                        Precipitation_in: weather.precipitationIn,
+                        Temperature_F: weather.temperatureF,
+                        Wind_Chill_F: weather.windChillF,
+                        Humidity_percent: weather.humidity,
+                        Pressure_in: weather.pressureIn,
+                    };
+
+                    // Get risk prediction from AI model
+                    const prediction = await this.aiModelService.predictRisk(predictRequest);
+
+                    // Create risk point DTO
+                    const riskPoint: RiskPointDto = {
+                        lat,
+                        lng,
+                        tier: prediction.predicted_risk_tier,
+                        severity3Probability: prediction.P_Severity_3,
+                    };
+
+                    riskPoints.push(riskPoint);
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Unknown error';
+                    this.logger.warn(
+                        `Failed to generate risk for point (${lat}, ${lng}): ${message}`,
+                    );
+                    // Continue with other points even if one fails
+                }
+            }
+
+            this.logger.log(`Successfully generated ${riskPoints.length} risk points`);
+            return riskPoints;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unknown error';
+            const stack = error instanceof Error ? error.stack : undefined;
+            this.logger.error(`Error generating risk points: ${message}`, stack);
+            return []; // Return empty array on error to not block route response
+        }
     }
 }

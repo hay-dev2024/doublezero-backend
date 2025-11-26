@@ -13,6 +13,7 @@ import { CacheModule } from '@nestjs/cache-manager';
     }),
   ],
   controllers: [WeatherController],
-  providers: [WeatherService]
+  providers: [WeatherService],
+  exports: [WeatherService],
 })
 export class WeatherModule {}
