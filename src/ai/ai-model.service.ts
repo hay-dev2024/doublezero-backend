@@ -27,6 +27,7 @@ export class AiModelService {
         this.httpService.post<PredictResponseDto>(`${this.aiServerUrl}/predict`, data),
       );
 
+      this.logger.debug(`AI server full response: ${JSON.stringify(response.data)}`);
       this.logger.log(`AI prediction received: tier=${response.data.predicted_risk_tier}`);
       return response.data;
     } catch (error: any) {

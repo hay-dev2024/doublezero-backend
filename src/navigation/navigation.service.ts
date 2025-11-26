@@ -283,10 +283,17 @@ export class NavigationService {
             // Decode polyline to get array of [lat, lng] coordinates
             const coordinates = decode(encodedPolyline, 5); // precision 5 for Google polylines
             
-            // Sample points along route (limit to ~15 points to avoid excessive API calls)
-            const sampleSize = Math.min(15, coordinates.length);
+            // Sample points along route (reduce to 3-5 points for faster response)
+            // Old logic (15 points): kept for reference if needed later
+            // const sampleSize = Math.min(15, coordinates.length);
+            // const step = Math.floor(coordinates.length / sampleSize) || 1;
+            // const sampledCoordinates = coordinates.filter((_, index) => index % step === 0);
+            
+            // New logic: 3-5 points based on total route points
+            const targetSamples = coordinates.length > 100 ? 5 : coordinates.length > 50 ? 4 : 3;
+            const sampleSize = Math.min(targetSamples, coordinates.length);
             const step = Math.floor(coordinates.length / sampleSize) || 1;
-            const sampledCoordinates = coordinates.filter((_, index) => index % step === 0);
+            const sampledCoordinates = coordinates.filter((_, index) => index % step === 0).slice(0, sampleSize);
             
             this.logger.log(
                 `Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`,
@@ -295,6 +302,8 @@ export class NavigationService {
             // Generate risk predictions for each sampled point
             const riskPoints: RiskPointDto[] = [];
             const currentTime = new Date();
+            // Format time as 'YYYY-MM-DD HH:MM:SS' for FastAPI
+            const formattedTime = currentTime.toISOString().slice(0, 19).replace('T', ' ');
 
             for (const [lat, lng] of sampledCoordinates) {
                 try {
@@ -303,7 +312,7 @@ export class NavigationService {
 
                     // Prepare AI model request with weather data and current time
                     const predictRequest: PredictRequestDto = {
-                        Start_Time: currentTime.toISOString(),
+                        Start_Time: formattedTime,
                         Visibility_mi: weather.visibilityMi,
                         Wind_Speed_mph: weather.windSpeedMph,
                         Precipitation_in: weather.precipitationIn,
@@ -316,15 +325,13 @@ export class NavigationService {
                     // Get risk prediction from AI model
                     const prediction = await this.aiModelService.predictRisk(predictRequest);
 
-                    // Create risk point DTO
-                    const riskPoint: RiskPointDto = {
+                    // Create risk point with plain object (not class instance)
+                    riskPoints.push({
                         lat,
                         lng,
                         tier: prediction.predicted_risk_tier,
                         severity3Probability: prediction.P_Severity_3,
-                    };
-
-                    riskPoints.push(riskPoint);
+                    });
                 } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown error';
                     this.logger.warn(

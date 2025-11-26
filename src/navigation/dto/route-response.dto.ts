@@ -84,6 +84,7 @@ export class RouteResponseDto {
         ],
     })
     @Expose()
+    @Type(() => RiskPointDto)
     riskPoints?: RiskPointDto[];
 }
 
