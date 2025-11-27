@@ -23,8 +23,9 @@ export class AiModelService {
     try {
       this.logger.log(`Requesting risk prediction from AI server: ${this.aiServerUrl}/predict`);
       
+      const timeoutMs = this.configService.get<number>('AI_TIMEOUT_MS', 10000);
       const response = await firstValueFrom(
-        this.httpService.post<PredictResponseDto>(`${this.aiServerUrl}/predict`, data),
+        this.httpService.post<PredictResponseDto>(`${this.aiServerUrl}/predict`, data, { timeout: timeoutMs }),
       );
 
       this.logger.debug(`AI server full response: ${JSON.stringify(response.data)}`);
