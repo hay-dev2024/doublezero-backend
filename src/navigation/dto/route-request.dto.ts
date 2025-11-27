@@ -1,6 +1,6 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max, IsBoolean } from "class-validator";
+import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max, IsBoolean, IsInt } from "class-validator";
 
 class LocationDto {
     @ApiProperty({ 
@@ -62,4 +62,24 @@ export class RouteRequestDto {
     @IsOptional()
     @IsBoolean()
     alternatives?: boolean = false;
+
+    @ApiProperty({
+        example: 3,
+        description: 'Number of risk sample points to request for heatmap (client default 3, server max 20)',
+        required: false,
+    })
+    @IsOptional()
+    @IsInt()
+    @Min(1)
+    @Max(20)
+    sampleCount?: number = 3;
+
+    @ApiProperty({
+        example: true,
+        description: 'Whether to include riskPoints in the route response (default true). If false, route is returned without riskPoints.',
+        required: false,
+    })
+    @IsOptional()
+    @IsBoolean()
+    includeRisk?: boolean = true;
 }
