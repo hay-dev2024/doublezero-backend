@@ -44,8 +44,8 @@ export class NavigationService {
 
     async calculateRoute(dto: RouteRequestDto): Promise<RoutesResponseDto> {
         const travelMode = dto.travelMode ?? 'DRIVE';
-        // cache (include alternatives flag)
-        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}:alt=${dto.alternatives ? '1' : '0'}`;
+        // cache (include alternatives flag, sampleCount and includeRisk)
+        const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}:alt=${dto.alternatives ? '1' : '0'}:samples=${dto.sampleCount ?? 3}:risk=${dto.includeRisk ? '1' : '0'}`;
 
         const cached = await this.cacheManager.get<RoutesResponseDto>(cacheKey);
         if (cached) {
@@ -112,19 +112,35 @@ export class NavigationService {
             const maxRoutes = dto.alternatives ? 2 : 1;
             const limited = routeDtos.slice(0, maxRoutes);
 
-            // Generate risk points for the first route
+            // Generate risk points for the first route (honor includeRisk flag)
             if (limited.length > 0 && limited[0].polyline) {
-                try {
-                    const riskPoints = await this.generateRiskPoints(
-                        dto.origin,
-                        dto.destination,
-                        limited[0].polyline,
-                    );
-                    limited[0].riskPoints = riskPoints;
-                    this.logger.log(`Generated ${riskPoints.length} risk points for primary route`);
-                } catch (error: any) {
-                    this.logger.warn(`Failed to generate risk points: ${error?.message}`);
-                    limited[0].riskPoints = []; // fallback
+                if (dto.includeRisk) {
+                    try {
+                        const sampleCount = dto.sampleCount ?? 3;
+                        const riskCacheKey = `risk:${limited[0].polyline}:samples=${sampleCount}`;
+                        const cachedRisk = await this.cacheManager.get<RiskPointDto[]>(riskCacheKey);
+                        if (cachedRisk) {
+                            limited[0].riskPoints = cachedRisk;
+                            this.logger.log(`Used cached ${cachedRisk.length} risk points for primary route`);
+                        } else {
+                            const riskPoints = await this.generateRiskPoints(
+                                dto.origin,
+                                dto.destination,
+                                limited[0].polyline,
+                                sampleCount,
+                            );
+                            limited[0].riskPoints = riskPoints;
+                            // cache riskPoints for short TTL (60 seconds)
+                            await this.cacheManager.set(riskCacheKey, riskPoints, 60);
+                            this.logger.log(`Generated ${riskPoints.length} risk points for primary route`);
+                        }
+                    } catch (error: any) {
+                        this.logger.warn(`Failed to generate risk points: ${error?.message}`);
+                        limited[0].riskPoints = []; // fallback
+                    }
+                } else {
+                    // includeRisk is false -> explicitly return empty array
+                    limited[0].riskPoints = [];
                 }
             }
 
@@ -278,6 +294,7 @@ export class NavigationService {
         origin: { lat: number; lon: number },
         destination: { lat: number; lon: number },
         encodedPolyline: string,
+        sampleCountRequested = 3,
     ): Promise<RiskPointDto[]> {
         try {
             // Decode polyline to get array of [lat, lon] coordinates
@@ -308,12 +325,15 @@ export class NavigationService {
                 }
             }
 
-            // Sample points along route (reduce to 3-5 points for faster response)
-            const sampleSize = Math.min(15, coordinates.length);
+            // Sample points along route based on requested sampleCount (server caps to 20)
+            const serverMax = 20;
+            const sampleCount = Math.max(1, Math.min(serverMax, Math.floor(sampleCountRequested)));
+            const sampleSize = Math.min(sampleCount, coordinates.length);
             const step = Math.floor(coordinates.length / sampleSize) || 1;
             const sampledCoordinates = coordinates
                 .map((c, idx) => ({ lat: c[0], lon: c[1], index: idx }))
-                .filter((_, index) => index % step === 0);
+                .filter((_, index) => index % step === 0)
+                .slice(0, sampleSize);
 
             this.logger.log(`Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`);
 
