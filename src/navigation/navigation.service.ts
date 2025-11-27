@@ -13,6 +13,7 @@ import { AiModelService } from 'src/ai/ai-model.service';
 import { WeatherService } from 'src/weather/weather.service';
 import { RiskPointDto } from 'src/ai/dto/risk-point.dto';
 import { PredictRequestDto } from 'src/ai/dto/predict-request.dto';
+import { RiskSummaryDto } from './dto/risk-summary.dto';
 
 @Injectable()
 export class NavigationService {
@@ -123,20 +124,33 @@ export class NavigationService {
                             limited[0].riskPoints = cachedRisk;
                             this.logger.log(`Used cached ${cachedRisk.length} risk points for primary route`);
                         } else {
-                            const riskPoints = await this.generateRiskPoints(
-                                dto.origin,
-                                dto.destination,
-                                limited[0].polyline,
-                                sampleCount,
-                            );
+                                const { riskPoints, weatherSummary } = await this.generateRiskPoints(
+                                    dto.origin,
+                                    dto.destination,
+                                    limited[0].polyline,
+                                    sampleCount,
+                                    // pass optional test-only simulateWeather from client
+                                    (dto as any).simulateWeather,
+                                );
                             limited[0].riskPoints = riskPoints;
+                            // compute risk summary and text using optional weather context
+                            const summary = this.buildRiskSummary(riskPoints, weatherSummary);
+                            limited[0].riskSummary = summary;
+                            limited[0].riskSummaryText = summary.message;
+                            // expose aggregated weather summary for client debugging/visibility
+                            limited[0].weatherSummary = weatherSummary;
                             // cache riskPoints for short TTL (60 seconds)
                             await this.cacheManager.set(riskCacheKey, riskPoints, 60);
+                            // also cache summary alongside riskPoints with same key_suffix
+                            await this.cacheManager.set(`${riskCacheKey}:summary`, summary, 60);
                             this.logger.log(`Generated ${riskPoints.length} risk points for primary route`);
                         }
                     } catch (error: any) {
                         this.logger.warn(`Failed to generate risk points: ${error?.message}`);
                         limited[0].riskPoints = []; // fallback
+                        // ensure no summary
+                        limited[0].riskSummary = undefined;
+                        limited[0].riskSummaryText = undefined;
                     }
                 } else {
                     // includeRisk is false -> explicitly return empty array
@@ -295,7 +309,8 @@ export class NavigationService {
         destination: { lat: number; lon: number },
         encodedPolyline: string,
         sampleCountRequested = 3,
-    ): Promise<RiskPointDto[]> {
+        simulateWeather?: { avgPrecipIn?: number; avgVisibilityMi?: number; avgWindMph?: number; precipLabel?: string; windLabel?: string },
+    ): Promise<{ riskPoints: RiskPointDto[]; weatherSummary: { precipitationPresent: boolean; avgVisibilityMi?: number } }> {
         try {
             // Decode polyline to get array of [lat, lon] coordinates
             const coordinates = decode(encodedPolyline, 5); // precision 5 for Google polylines
@@ -339,14 +354,63 @@ export class NavigationService {
 
             // Generate risk predictions for each sampled point
             const riskPoints: RiskPointDto[] = [];
+            let totalVisibility = 0;
+            let visibilityCount = 0;
+            let totalPrecipIn = 0;
+            let precipCount = 0;
+            let totalWindMph = 0;
+            let windCount = 0;
             const currentTime = new Date();
             // Format time as 'YYYY-MM-DD HH:MM:SS' for FastAPI
             const formattedTime = currentTime.toISOString().slice(0, 19).replace('T', ' ');
 
             for (const { lat, lon, index: pointIndex } of sampledCoordinates) {
                 try {
-                    // Fetch weather data for this coordinate
-                    const weather = await this.weatherService.getCurrentWeatherForAI(lat, lon);
+                    // If simulateWeather supplied, use those values for every sample (test-only)
+                    let weather: any;
+                    if (simulateWeather) {
+                        weather = {
+                            visibilityMi: simulateWeather.avgVisibilityMi ?? undefined,
+                            precipitationIn: simulateWeather.avgPrecipIn ?? 0,
+                            windSpeedMph: simulateWeather.avgWindMph ?? 0,
+                            // other fields defaulted for AI input
+                            temperatureF: 70,
+                            windChillF: 70,
+                            humidity: 80,
+                            pressureIn: 29.92,
+                        };
+
+                        // aggregate simulated values
+                        if (typeof weather.visibilityMi === 'number') {
+                            totalVisibility += weather.visibilityMi;
+                            visibilityCount += 1;
+                        }
+                        if (typeof weather.precipitationIn === 'number') {
+                            totalPrecipIn += weather.precipitationIn;
+                            precipCount += 1;
+                        }
+                        if (typeof weather.windSpeedMph === 'number') {
+                            totalWindMph += weather.windSpeedMph;
+                            windCount += 1;
+                        }
+                    } else {
+                        // Fetch weather data for this coordinate
+                        weather = await this.weatherService.getCurrentWeatherForAI(lat, lon);
+
+                        // aggregate simple weather summary
+                        if (typeof weather.visibilityMi === 'number') {
+                            totalVisibility += weather.visibilityMi;
+                            visibilityCount += 1;
+                        }
+                        if (typeof weather.precipitationIn === 'number') {
+                            totalPrecipIn += weather.precipitationIn;
+                            precipCount += 1;
+                        }
+                        if (typeof weather.windSpeedMph === 'number') {
+                            totalWindMph += weather.windSpeedMph;
+                            windCount += 1;
+                        }
+                    }
 
                     // Prepare AI model request with weather data and current time
                     const predictRequest: PredictRequestDto = {
@@ -389,12 +453,160 @@ export class NavigationService {
             }
 
             this.logger.log(`Successfully generated ${riskPoints.length} risk points`);
-            return riskPoints;
+
+            // Build weather summary with average values and simple labels
+            const weatherSummary: {
+                precipitationPresent: boolean;
+                avgPrecipIn?: number;
+                precipLabel?: 'none'|'light'|'moderate'|'heavy';
+                avgVisibilityMi?: number;
+                avgWindMph?: number;
+                windLabel?: 'calm'|'moderate'|'strong'|'gale';
+            } = {
+                precipitationPresent: false,
+            };
+
+            if (precipCount > 0) {
+                const avgPrecip = totalPrecipIn / precipCount;
+                weatherSummary.avgPrecipIn = Math.round(avgPrecip * 100) / 100;
+                weatherSummary.precipitationPresent = avgPrecip > 0.01;
+                // classify precipitation intensity
+                if (avgPrecip <= 0.01) weatherSummary.precipLabel = 'none';
+                else if (avgPrecip <= 0.05) weatherSummary.precipLabel = 'light';
+                else if (avgPrecip <= 0.2) weatherSummary.precipLabel = 'moderate';
+                else weatherSummary.precipLabel = 'heavy';
+            }
+
+            if (visibilityCount > 0) {
+                weatherSummary.avgVisibilityMi = Math.round((totalVisibility / visibilityCount) * 100) / 100;
+            }
+
+            if (windCount > 0) {
+                const avgWind = totalWindMph / windCount;
+                weatherSummary.avgWindMph = Math.round(avgWind * 10) / 10;
+                // classify wind
+                if (avgWind < 10) weatherSummary.windLabel = 'calm';
+                else if (avgWind < 20) weatherSummary.windLabel = 'moderate';
+                else if (avgWind < 35) weatherSummary.windLabel = 'strong';
+                else weatherSummary.windLabel = 'gale';
+            }
+
+            // Return both risk points and a compact weather summary for message generation
+            return { riskPoints, weatherSummary };
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             const stack = error instanceof Error ? error.stack : undefined;
             this.logger.error(`Error generating risk points: ${message}`, stack);
-            return []; // Return empty array on error to not block route response
+            return { riskPoints: [], weatherSummary: { precipitationPresent: false } };
         }
+    }
+
+    private buildRiskSummary(
+        riskPoints: RiskPointDto[],
+        weatherSummary?: {
+            precipitationPresent: boolean;
+            avgPrecipIn?: number;
+            precipLabel?: 'none'|'light'|'moderate'|'heavy';
+            avgVisibilityMi?: number;
+            avgWindMph?: number;
+            windLabel?: 'calm'|'moderate'|'strong'|'gale';
+        },
+    ): RiskSummaryDto {
+        const hotspotThreshold = Number(this.configService.get<number>('HOTSPOT_THRESHOLD', 0.66));
+        const weights = riskPoints.map(r => Number(r.weight ?? 0));
+        const avg = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : 0;
+        const max = weights.length ? Math.max(...weights) : 0;
+        const hotspotCount = weights.filter(w => w > hotspotThreshold).length;
+        // determine level by max (conservative)
+        const level: 'Low'|'Medium'|'High' = max > 0.66 ? 'High' : (max > 0.33 ? 'Medium' : 'Low');
+
+        const avgRounded = Number(avg.toFixed(2));
+        const maxRounded = Number(max.toFixed(2));
+        // maxStr is available in structured summary but not included in human-readable message
+
+        // Build a more user-friendly, multi-part message including an action suggestion
+        const parts: string[] = [];
+        // Build concise, user-friendly message without hotspot counts/max values
+        if (level === 'High') {
+            parts.push('High risk.');
+        } else if (level === 'Medium') {
+            parts.push('Medium risk.');
+        } else {
+            parts.push('Low risk.');
+        }
+
+        // Incorporate simple weather context if available and strengthen action text when conditions are severe
+        let heavyPrecip = false;
+        let lowVisibility = false;
+        let veryLowVisibility = false;
+        let strongWind = false;
+        let galeWind = false;
+
+        if (weatherSummary) {
+            if (weatherSummary.precipLabel && weatherSummary.precipLabel !== 'none') {
+                if (weatherSummary.precipLabel === 'light') parts.push('Light rain/drizzle is occurring.');
+                else if (weatherSummary.precipLabel === 'moderate') {
+                    parts.push('Moderate precipitation is occurring.');
+                } else {
+                    parts.push('Heavy precipitation is occurring.');
+                    heavyPrecip = true;
+                }
+            }
+
+            if (typeof weatherSummary.avgVisibilityMi === 'number') {
+                if (weatherSummary.avgVisibilityMi < 0.25) {
+                    parts.push('Visibility is very low.');
+                    veryLowVisibility = true;
+                } else if (weatherSummary.avgVisibilityMi < 0.5) {
+                    parts.push('Visibility is low.');
+                    lowVisibility = true;
+                }
+            }
+
+            if (typeof weatherSummary.avgWindMph === 'number') {
+                const w = weatherSummary.avgWindMph;
+                if (w >= 35 || weatherSummary.windLabel === 'gale') {
+                    parts.push('Gale-force winds expected.');
+                    galeWind = true;
+                } else if (w >= 20 || weatherSummary.windLabel === 'strong') {
+                    parts.push('Strong winds expected.');
+                    strongWind = true;
+                }
+            }
+        }
+
+        // Decide action guidance based on risk level and weather severity
+        let action = 'Drive with caution.';
+
+        const severeWeather = heavyPrecip || veryLowVisibility || galeWind;
+        const elevatedWeather = heavyPrecip || lowVisibility || strongWind;
+
+        if (severeWeather) {
+            action = 'Severe conditions: consider delaying your trip. If driving, pull over if unsafe and avoid sudden maneuvers.';
+        } else if (level === 'High') {
+            action = elevatedWeather
+                ? 'Reduce speed, increase following distance, and avoid sudden maneuvers.'
+                : 'Slow down and keep a safe distance.';
+        } else if (level === 'Medium') {
+            action = elevatedWeather
+                ? 'Reduce speed and increase following distance.'
+                : 'Drive with caution.';
+        } else {
+            action = elevatedWeather
+                ? 'Conditions are fair but weather may affect driving — reduce speed as needed.'
+                : 'Normal driving conditions.';
+        }
+
+        // Join into a short natural sentence for the UI
+        const message = `${parts.join(' ')} ${action}`.trim();
+
+        return {
+            level,
+            avgWeight: avgRounded,
+            maxWeight: maxRounded,
+            hotspotCount,
+            hotspotThreshold,
+            message,
+        } as RiskSummaryDto;
     }
 }

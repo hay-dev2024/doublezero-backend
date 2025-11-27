@@ -11,7 +11,7 @@ import { WeatherModule } from 'src/weather/weather.module';
     HttpModule,
     CacheModule.register({
       ttl: 3600,
-      max: 100, // 최대 100개 캐시
+      max: 100, // max 100 cache entries
     }),
     AiModule,
     WeatherModule,

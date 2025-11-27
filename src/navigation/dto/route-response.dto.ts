@@ -1,6 +1,8 @@
 import { ApiProperty } from "@nestjs/swagger";
 import { Expose, Type } from "class-transformer";
 import { RiskPointDto } from "src/ai/dto/risk-point.dto";
+import { RiskSummaryDto } from "./risk-summary.dto";
+import { WeatherSummaryDto } from "./weather-summary.dto";
 
 export class RouteResponseDto {
     @ApiProperty({ example: '77.8 km', description: 'Total distance' })
@@ -86,9 +88,33 @@ export class RouteResponseDto {
     @Expose()
     @Type(() => RiskPointDto)
     riskPoints?: RiskPointDto[];
+
+    @ApiProperty({
+        type: RiskSummaryDto,
+        description: 'Structured risk summary for this route (optional)',
+        required: false,
+        example: { level: 'High', avgWeight: 0.88, maxWeight: 0.91, hotspotCount: 2, hotspotThreshold: 0.66, message: 'High risk — 2 hotspot(s) (max 0.91)' }
+    })
+    @Expose()
+    @Type(() => RiskSummaryDto)
+    riskSummary?: RiskSummaryDto;
+
+    @ApiProperty({ example: 'High risk — 2 hotspot(s) (max 0.91)', description: 'Human readable risk summary text (optional)', required: false })
+    @Expose()
+    riskSummaryText?: string;
+
+    @ApiProperty({
+        type: WeatherSummaryDto,
+        description: 'Aggregated weather summary for sampled points (optional)',
+        required: false,
+        example: { precipitationPresent: false, avgPrecipIn: 0.0, precipLabel: 'none', avgVisibilityMi: 5.2, avgWindMph: 8.4, windLabel: 'moderate' }
+    })
+    @Expose()
+    @Type(() => WeatherSummaryDto)
+    weatherSummary?: WeatherSummaryDto;
 }
 
-// 경로가 복수인 경우
+// When multiple routes are returned
 export class RoutesResponseDto {
     @ApiProperty({
         type: [RouteResponseDto],

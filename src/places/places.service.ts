@@ -10,7 +10,7 @@ import { plainToInstance } from 'class-transformer';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
 
-// Google Places API FieldMask 상수
+// Google Places API field mask constants
 const PLACE_FIELD_MASKS = {
   BASIC: 'places.id,places.displayName,places.formattedAddress,places.location,places.types',
   AUTOCOMPLETE: 'suggestions.placePrediction',
@@ -110,7 +110,7 @@ export class PlacesService {
                 languageCode: 'en',
             };
             
-            // 가까운 곳부터 표시
+            // Bias results to nearby locations
             if (lat !== undefined && lon !== undefined) {
                 requestBody.locationBias = {
                     circle: {

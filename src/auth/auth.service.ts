@@ -21,7 +21,7 @@ export class AuthService {
 
     async validateGoogleToken(idToken: string) {
         try {
-            // idToken 검증
+            // Validate idToken
             const ticket = await this.googleClient.verifyIdToken({
                 idToken: idToken,
                 audience: this.configService.get<string>('GOOGLE_CLIENT_ID'),
@@ -39,14 +39,14 @@ export class AuthService {
                 throw new UnauthorizedException('Missing required user information from Google');
             }
 
-            // DB에서 사용자 조회/생성
+            // Find or create user in DB
             const user: User = await this.usersService.findByGoogleIdOrCreate(
                 googleId,
                 email,
                 displayName,
             );
 
-            // JWT token 생성
+            // Generate JWT token
             const accessToken = this.jwtService.sign({
                 sub: String(user._id),
                 email: user.email,

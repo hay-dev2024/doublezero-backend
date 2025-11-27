@@ -120,7 +120,7 @@ export class WeatherService {
         }
     }
 
-    // OpenWeather API 호출
+    // OpenWeather API call
     private async fetchWeatherData(lat: number, lon: number): Promise<any> {
         const url = `${this.baseUrl}?lat=${lat}&lon=${lon}&units=metric&appid=${this.apiKey}`;
         const response = await firstValueFrom(this.httpService.get(url));
@@ -187,7 +187,7 @@ export class WeatherService {
         );
     }
 
-    // 단위 변환 함수
+    // Unit conversion helpers
     private celsiusToFahrenheit(celsius: number): number {
         return (celsius * 9) / 5 + 32;
     }

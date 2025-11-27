@@ -1,6 +1,6 @@
-import { ApiProperty } from "@nestjs/swagger";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { Type } from "class-transformer";
-import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max, IsBoolean, IsInt } from "class-validator";
+import { IsEnum, IsOptional, ValidateNested, IsNumber, Min, Max, IsBoolean, IsInt, IsObject } from "class-validator";
 
 class LocationDto {
     @ApiProperty({ 
@@ -82,4 +82,12 @@ export class RouteRequestDto {
     @IsOptional()
     @IsBoolean()
     includeRisk?: boolean = true;
+
+    @ApiPropertyOptional({
+        description: 'Test-only: simulate aggregated weather for sampled points. Example: { avgPrecipIn: 0.5, avgVisibilityMi: 1.2, avgWindMph: 25 }',
+        required: false,
+    })
+    @IsOptional()
+    @IsObject()
+    simulateWeather?: Record<string, any>;
 }
