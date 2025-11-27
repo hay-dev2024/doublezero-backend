@@ -280,24 +280,42 @@ export class NavigationService {
         encodedPolyline: string,
     ): Promise<RiskPointDto[]> {
         try {
-            // Decode polyline to get array of [lat, lng] coordinates
+            // Decode polyline to get array of [lat, lon] coordinates
             const coordinates = decode(encodedPolyline, 5); // precision 5 for Google polylines
-            
+
+            // Precompute cumulative distances along the decoded coordinates
+            const haversine = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+                const toRad = (v: number) => (v * Math.PI) / 180;
+                const R = 6371000; // meters
+                const dLat = toRad(lat2 - lat1);
+                const dLon = toRad(lon2 - lon1);
+                const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+                return R * c;
+            };
+
+            const cumulativeDistances: number[] = [];
+            let acc = 0;
+            for (let i = 0; i < coordinates.length; i++) {
+                const [lat, lon] = coordinates[i];
+                if (i === 0) {
+                    cumulativeDistances.push(0);
+                } else {
+                    const [plat, plon] = coordinates[i - 1];
+                    acc += haversine(plat, plon, lat, lon);
+                    cumulativeDistances.push(Math.round(acc));
+                }
+            }
+
             // Sample points along route (reduce to 3-5 points for faster response)
-            // Old logic (15 points): kept for reference if needed later
-            // const sampleSize = Math.min(15, coordinates.length);
-            // const step = Math.floor(coordinates.length / sampleSize) || 1;
-            // const sampledCoordinates = coordinates.filter((_, index) => index % step === 0);
-            
-            // New logic: 3-5 points based on total route points
-            const targetSamples = coordinates.length > 100 ? 5 : coordinates.length > 50 ? 4 : 3;
-            const sampleSize = Math.min(targetSamples, coordinates.length);
+            const sampleSize = Math.min(15, coordinates.length);
             const step = Math.floor(coordinates.length / sampleSize) || 1;
-            const sampledCoordinates = coordinates.filter((_, index) => index % step === 0).slice(0, sampleSize);
-            
-            this.logger.log(
-                `Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`,
-            );
+            const sampledCoordinates = coordinates
+                .map((c, idx) => ({ lat: c[0], lon: c[1], index: idx }))
+                .filter((_, index) => index % step === 0);
+
+            this.logger.log(`Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`);
 
             // Generate risk predictions for each sampled point
             const riskPoints: RiskPointDto[] = [];
@@ -305,10 +323,10 @@ export class NavigationService {
             // Format time as 'YYYY-MM-DD HH:MM:SS' for FastAPI
             const formattedTime = currentTime.toISOString().slice(0, 19).replace('T', ' ');
 
-            for (const [lat, lng] of sampledCoordinates) {
+            for (const { lat, lon, index: pointIndex } of sampledCoordinates) {
                 try {
                     // Fetch weather data for this coordinate
-                    const weather = await this.weatherService.getCurrentWeatherForAI(lat, lng);
+                    const weather = await this.weatherService.getCurrentWeatherForAI(lat, lon);
 
                     // Prepare AI model request with weather data and current time
                     const predictRequest: PredictRequestDto = {
@@ -325,18 +343,27 @@ export class NavigationService {
                     // Get risk prediction from AI model
                     const prediction = await this.aiModelService.predictRisk(predictRequest);
 
+                    // normalize weight (use severity3Probability as base, clipped 0..1)
+                    const severity = Number(prediction.P_Severity_3 ?? 0);
+                    const weight = Math.max(0, Math.min(1, severity));
+
+                    const distanceFromStartMeters = cumulativeDistances[pointIndex] ?? 0;
+
                     // Create risk point with plain object (not class instance)
                     riskPoints.push({
                         lat,
-                        lng,
+                        lon,
                         tier: prediction.predicted_risk_tier,
-                        severity3Probability: prediction.P_Severity_3,
+                        severity3Probability: severity,
+                        weight,
+                        pointIndex,
+                        distanceFromStartMeters,
+                        timestamp: formattedTime,
+                        source: 'ai',
                     });
                 } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown error';
-                    this.logger.warn(
-                        `Failed to generate risk for point (${lat}, ${lng}): ${message}`,
-                    );
+                    this.logger.warn(`Failed to generate risk for point (${lat}, ${lon}): ${message}`);
                     // Continue with other points even if one fails
                 }
             }

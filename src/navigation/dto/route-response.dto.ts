@@ -79,8 +79,8 @@ export class RouteResponseDto {
         description: 'Risk heatmap data points for this route',
         required: false,
         example: [
-            { lat: 37.4219999, lng: -122.0840575, tier: 1, severity3Probability: 0.2098 },
-            { lat: 37.4220123, lng: -122.0841234, tier: 0, severity3Probability: 0.0488 },
+            { lat: 37.4219999, lon: -122.0840575, tier: 1, severity3Probability: 0.2098, weight: 0.21, pointIndex: 0, distanceFromStartMeters: 0, timestamp: '2025-11-26 16:44:10', source: 'ai' },
+            { lat: 37.4220123, lon: -122.0841234, tier: 0, severity3Probability: 0.0488, weight: 0.05, pointIndex: 12, distanceFromStartMeters: 520, timestamp: '2025-11-26 16:44:10', source: 'ai' },
         ],
     })
     @Expose()
