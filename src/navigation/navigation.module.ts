@@ -5,6 +5,8 @@ import { HttpModule } from '@nestjs/axios';
 import { CacheModule } from '@nestjs/cache-manager';
 import { AiModule } from 'src/ai/ai.module';
 import { WeatherModule } from 'src/weather/weather.module';
+import { RiskController } from './risk.controller';
+import { RiskService } from './risk.service';
 
 @Module({
   imports: [
@@ -16,8 +18,8 @@ import { WeatherModule } from 'src/weather/weather.module';
     AiModule,
     WeatherModule,
   ],
-  controllers: [NavigationController],
-  providers: [NavigationService],
-  exports: [NavigationService],
+  controllers: [NavigationController, RiskController],
+  providers: [NavigationService, RiskService],
+  exports: [NavigationService, RiskService],
 })
 export class NavigationModule {}

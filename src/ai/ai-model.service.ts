@@ -36,4 +36,29 @@ export class AiModelService {
       throw error;
     }
   }
+
+  /**
+   * Try a batch prediction endpoint on the AI server. If not available, the caller
+   * can choose to fall back to individual calls using `predictRisk`.
+   */
+  async predictBatch(batch: PredictRequestDto[], timeoutMs?: number): Promise<PredictResponseDto[]> {
+    try {
+      const timeout = timeoutMs ?? this.configService.get<number>('AI_TIMEOUT_MS', 10000);
+      this.logger.log(`Requesting AI batch prediction for ${batch.length} items`);
+
+      const response = await firstValueFrom(
+        this.httpService.post<PredictResponseDto[]>(`${this.aiServerUrl}/predict-batch`, { batch }, { timeout }),
+      );
+
+      if (!Array.isArray(response.data)) {
+        this.logger.warn('AI batch response was not an array, falling back to empty result');
+        return [];
+      }
+
+      return response.data;
+    } catch (err: any) {
+      this.logger.warn(`AI batch prediction failed: ${err?.message || err}. Falling back to per-item predictions if caller requests.`);
+      throw err;
+    }
+  }
 }
