@@ -1,9 +1,10 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import mongoose from 'mongoose';
 
 @Schema({ timestamps: true })
 export class History extends Document {
-  @Prop({ required: true })
+  @Prop({ type: mongoose.SchemaTypes.ObjectId, ref: 'User', required: true })
   userId: string;
 
   @Prop({ type: Object, required: true })
@@ -47,6 +48,9 @@ export class History extends Document {
 }
 
 export const HistorySchema = SchemaFactory.createForClass(History);
+
+// Index for fast lookup of a user's history
+HistorySchema.index({ userId: 1 });
 
 HistorySchema.set('toJSON', {
   virtuals: true,
