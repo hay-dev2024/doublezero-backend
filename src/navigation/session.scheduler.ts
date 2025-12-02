@@ -241,34 +241,34 @@ export class SessionScheduler {
 
     // Very high risk
     if (maxRisk >= 0.8) {
-      if (hasStorm) return '⚠️ Storm ahead - Reduce speed immediately';
-      if (hasSnow) return '❄️ Heavy snow ahead - Very dangerous';
-      if (hasFog) return '🌫️ Dense fog ahead - Low visibility';
-      return '🚨 Very high risk ahead - Slow down and drive carefully';
+      if (hasStorm) return 'Storm ahead - Reduce speed immediately';
+      if (hasSnow) return 'Heavy snow ahead - Very dangerous';
+      if (hasFog) return 'Dense fog ahead - Low visibility';
+      return 'Very high risk ahead - Slow down and drive carefully';
     }
 
     // High risk
     if (maxRisk >= 0.7) {
-      if (hasRain) return `☔ ${highRiskCount} wet road sections ahead - Slow down`;
-      if (hasSnow) return `❄️ ${highRiskCount} snowy sections ahead - Keep safe distance`;
-      if (lowVisibility) return `🌫️ Low visibility ahead - Use headlights`;
-      if (hasHighWind) return `💨 Strong winds ahead - Grip steering firmly`;
-      return `⚠️ ${highRiskCount} high-risk sections ahead - Drive carefully`;
+      if (hasRain) return 'Wet road sections ahead - Slow down';
+      if (hasSnow) return 'Snowy sections ahead - Keep safe distance';
+      if (lowVisibility) return 'Low visibility ahead - Use headlights';
+      if (hasHighWind) return 'Strong winds ahead - Grip steering firmly';
+      return 'High-risk sections ahead - Drive carefully';
     }
 
     // Medium risk
     if (maxRisk >= 0.5) {
-      if (hasRain) return '🌧️ Wet road ahead - Maintain safe speed';
-      if (hasHighWind) return '🌬️ Windy conditions ahead - Control vehicle';
-      return '⚠️ Medium risk ahead - Drive safely';
+      if (hasRain) return 'Wet road ahead - Maintain safe speed';
+      if (hasHighWind) return 'Windy conditions ahead - Control vehicle';
+      return 'Medium risk ahead - Drive safely';
     }
 
     // Low risk
     if (maxRisk >= 0.3) {
-      return '✅ Road is relatively safe - Stay alert';
+      return 'Road is relatively safe - Stay alert';
     }
 
-    return '✅ Road is safe';
+    return 'Road is safe';
   }
 
   /**
