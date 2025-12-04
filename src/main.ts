@@ -6,6 +6,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors();
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -14,16 +16,15 @@ async function bootstrap() {
     }),
   );
 
-  // swagger
   const config = new DocumentBuilder()
   .setTitle('DoubleZero API')
   .setDescription('DoubleZero Backend API Documentation')
   .setVersion('1.0')
-  .addBearerAuth() // JWT
+  .addBearerAuth()
   .build()
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api-docs', app, document); // http://localhost:3000/api-docs
+  SwaggerModule.setup('api-docs', app, document);
 
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '0.0.0.0';
