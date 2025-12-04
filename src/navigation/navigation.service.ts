@@ -45,7 +45,7 @@ export class NavigationService {
 
     async calculateRoute(dto: RouteRequestDto): Promise<RoutesResponseDto> {
         const travelMode = dto.travelMode ?? 'DRIVE';
-        // cache (include alternatives flag, sampleCount and includeRisk)
+        // cache
         const cacheKey = `route:${dto.origin.lat},${dto.origin.lon}-${dto.destination.lat},${dto.destination.lon}-${travelMode}:alt=${dto.alternatives ? '1' : '0'}:samples=${dto.sampleCount ?? 3}:risk=${dto.includeRisk ? '1' : '0'}`;
 
         const cached = await this.cacheManager.get<RoutesResponseDto>(cacheKey);
@@ -109,11 +109,10 @@ export class NavigationService {
 
             const routeDtos = routes.map((route: any) => this.transformRouteToDto(route));
 
-            // Limit results: if alternatives requested, allow primary + one alternative, otherwise only primary
             const maxRoutes = dto.alternatives ? 2 : 1;
             const limited = routeDtos.slice(0, maxRoutes);
 
-            // Generate risk points for the first route (honor includeRisk flag)
+            // Generate risk points for the first route 
             if (limited.length > 0 && limited[0].polyline) {
                 if (dto.includeRisk) {
                     try {
@@ -129,31 +128,26 @@ export class NavigationService {
                                     dto.destination,
                                     limited[0].polyline,
                                     sampleCount,
-                                    // pass optional test-only simulateWeather from client
                                     (dto as any).simulateWeather,
                                 );
                             limited[0].riskPoints = riskPoints;
-                            // compute risk summary and text using optional weather context
+
                             const summary = this.buildRiskSummary(riskPoints, weatherSummary);
                             limited[0].riskSummary = summary;
                             limited[0].riskSummaryText = summary.message;
-                            // expose aggregated weather summary for client debugging/visibility
                             limited[0].weatherSummary = weatherSummary;
-                            // cache riskPoints for short TTL (60 seconds)
+    
                             await this.cacheManager.set(riskCacheKey, riskPoints, 60);
-                            // also cache summary alongside riskPoints with same key_suffix
                             await this.cacheManager.set(`${riskCacheKey}:summary`, summary, 60);
                             this.logger.log(`Generated ${riskPoints.length} risk points for primary route`);
                         }
                     } catch (error: any) {
                         this.logger.warn(`Failed to generate risk points: ${error?.message}`);
-                        limited[0].riskPoints = []; // fallback
-                        // ensure no summary
+                        limited[0].riskPoints = []; 
                         limited[0].riskSummary = undefined;
                         limited[0].riskSummaryText = undefined;
                     }
                 } else {
-                    // includeRisk is false -> explicitly return empty array
                     limited[0].riskPoints = [];
                 }
             }
@@ -301,9 +295,6 @@ export class NavigationService {
         );
     }
 
-    /**
-     * Generate risk points along the route by sampling coordinates and calling AI model
-     */
     private async generateRiskPoints(
         origin: { lat: number; lon: number },
         destination: { lat: number; lon: number },
@@ -312,10 +303,8 @@ export class NavigationService {
         simulateWeather?: { avgPrecipIn?: number; avgVisibilityMi?: number; avgWindMph?: number; precipLabel?: string; windLabel?: string },
     ): Promise<{ riskPoints: RiskPointDto[]; weatherSummary: { precipitationPresent: boolean; avgVisibilityMi?: number } }> {
         try {
-            // Decode polyline to get array of [lat, lon] coordinates
-            const coordinates = decode(encodedPolyline, 5); // precision 5 for Google polylines
+            const coordinates = decode(encodedPolyline, 5); 
 
-            // Precompute cumulative distances along the decoded coordinates
             const haversine = (lat1: number, lon1: number, lat2: number, lon2: number) => {
                 const toRad = (v: number) => (v * Math.PI) / 180;
                 const R = 6371000; // meters
@@ -340,7 +329,6 @@ export class NavigationService {
                 }
             }
 
-            // Sample points along route based on requested sampleCount (server caps to 20)
             const serverMax = 20;
             const sampleCount = Math.max(1, Math.min(serverMax, Math.floor(sampleCountRequested)));
             const sampleSize = Math.min(sampleCount, coordinates.length);
@@ -352,7 +340,6 @@ export class NavigationService {
 
             this.logger.log(`Sampling ${sampledCoordinates.length} points from ${coordinates.length} total coordinates`);
 
-            // Generate risk predictions for each sampled point
             const riskPoints: RiskPointDto[] = [];
             let totalVisibility = 0;
             let visibilityCount = 0;
@@ -366,7 +353,6 @@ export class NavigationService {
 
             for (const { lat, lon, index: pointIndex } of sampledCoordinates) {
                 try {
-                    // If simulateWeather supplied, use those values for every sample (test-only)
                     let weather: any;
                     if (simulateWeather) {
                         weather = {
@@ -394,10 +380,8 @@ export class NavigationService {
                             windCount += 1;
                         }
                     } else {
-                        // Fetch weather data for this coordinate
                         weather = await this.weatherService.getCurrentWeatherForAI(lat, lon);
 
-                        // aggregate simple weather summary
                         if (typeof weather.visibilityMi === 'number') {
                             totalVisibility += weather.visibilityMi;
                             visibilityCount += 1;
@@ -412,7 +396,6 @@ export class NavigationService {
                         }
                     }
 
-                    // Prepare AI model request with weather data and current time
                     const predictRequest: PredictRequestDto = {
                         Start_Time: formattedTime,
                         Visibility_mi: weather.visibilityMi,
@@ -424,16 +407,15 @@ export class NavigationService {
                         Pressure_in: weather.pressureIn,
                     };
 
-                    // Get risk prediction from AI model
                     const prediction = await this.aiModelService.predictRisk(predictRequest);
 
-                    // normalize weight (use severity3Probability as base, clipped 0..1)
+                    // normalize weight
                     const severity = Number(prediction.P_Severity_3 ?? 0);
                     const weight = Math.max(0, Math.min(1, severity));
 
                     const distanceFromStartMeters = cumulativeDistances[pointIndex] ?? 0;
 
-                    // Create risk point with plain object (not class instance)
+                    // Create risk point
                     riskPoints.push({
                         lat,
                         lon,
@@ -448,13 +430,12 @@ export class NavigationService {
                 } catch (error) {
                     const message = error instanceof Error ? error.message : 'Unknown error';
                     this.logger.warn(`Failed to generate risk for point (${lat}, ${lon}): ${message}`);
-                    // Continue with other points even if one fails
                 }
             }
 
             this.logger.log(`Successfully generated ${riskPoints.length} risk points`);
 
-            // Build weather summary with average values and simple labels
+            // Build weather summary
             const weatherSummary: {
                 precipitationPresent: boolean;
                 avgPrecipIn?: number;
@@ -491,7 +472,6 @@ export class NavigationService {
                 else weatherSummary.windLabel = 'gale';
             }
 
-            // Return both risk points and a compact weather summary for message generation
             return { riskPoints, weatherSummary };
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
@@ -517,16 +497,12 @@ export class NavigationService {
         const avg = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : 0;
         const max = weights.length ? Math.max(...weights) : 0;
         const hotspotCount = weights.filter(w => w > hotspotThreshold).length;
-        // determine level by max (conservative)
         const level: 'Low'|'Medium'|'High' = max > 0.66 ? 'High' : (max > 0.33 ? 'Medium' : 'Low');
 
         const avgRounded = Number(avg.toFixed(2));
         const maxRounded = Number(max.toFixed(2));
-        // maxStr is available in structured summary but not included in human-readable message
-
-        // Build a more user-friendly, multi-part message including an action suggestion
         const parts: string[] = [];
-        // Build concise, user-friendly message without hotspot counts/max values
+
         if (level === 'High') {
             parts.push('High risk.');
         } else if (level === 'Medium') {
@@ -535,7 +511,6 @@ export class NavigationService {
             parts.push('Low risk.');
         }
 
-        // Incorporate simple weather context if available and strengthen action text when conditions are severe
         let heavyPrecip = false;
         let lowVisibility = false;
         let veryLowVisibility = false;
@@ -575,7 +550,6 @@ export class NavigationService {
             }
         }
 
-        // Decide action guidance based on risk level and weather severity
         let action = 'Drive with caution.';
 
         const severeWeather = heavyPrecip || veryLowVisibility || galeWind;
@@ -597,7 +571,6 @@ export class NavigationService {
                 : 'Normal driving conditions.';
         }
 
-        // Join into a short natural sentence for the UI
         const message = `${parts.join(' ')} ${action}`.trim();
 
         return {

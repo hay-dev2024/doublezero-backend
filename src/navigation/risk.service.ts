@@ -46,7 +46,7 @@ export class RiskService {
   }
 
   /**
-   * SessionScheduler에서 사용할 간단한 위험도 예측 메서드
+   * SessionScheduler에서 사용할 위험도 예측 메서드
    */
   async predictRiskForPoints(
     points: Array<{ lat: number; lng: number }>,
@@ -107,8 +107,6 @@ export class RiskService {
       const cached = await this.getIdempotent(idemKey);
       if (cached) {
         this.logger.log(`Returning idempotent cached result for ${idemKey}`);
-        // Ensure cached response contains a summary and scale — if it was cached by
-        // an older server version that didn't include summary, compute and attach it.
         const cachedResp = cached as RiskBatchResponseDto;
         try {
           if (!cachedResp.summary || !cachedResp.scale) {
@@ -136,7 +134,6 @@ export class RiskService {
       }
     }
 
-    // Build per-point PredictRequestDto by fetching weather for each point
     const predictRequests: PredictRequestDto[] = [];
     for (const p of dto.points) {
       try {
@@ -174,7 +171,6 @@ export class RiskService {
       predictions = await this.aiModelService.predictBatch(predictRequests);
     } catch (err) {
       this.logger.warn('AI batch endpoint failed, falling back to per-item predictions (parallel)');
-      // Fallback: call predictRisk with bounded concurrency using p-limit
       const concurrency = this.configService.get<number>('RISK_FALLBACK_CONCURRENCY', 4);
       const limit = pLimit(concurrency);
       const fallback = await Promise.all(
@@ -214,7 +210,7 @@ export class RiskService {
     const min = weights.length ? Math.min(...weights) : 0;
     const max = weights.length ? Math.max(...weights) : 0;
 
-    // generate a lightweight summary using existing heuristics; reuse NavigationService logic is possible but keep simple
+    // generate a lightweight summary using existing heuristics
     const avg = weights.length ? weights.reduce((a, b) => a + b, 0) / weights.length : 0;
     const summary = {
       level: (max > 0.66 ? 'High' : (max > 0.33 ? 'Medium' : 'Low')) as 'High' | 'Medium' | 'Low',

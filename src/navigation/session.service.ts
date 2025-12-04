@@ -129,11 +129,11 @@ export class SessionService {
     const session = this.sessions.get(sessionId);
 
     if (!session) {
-      return; // 컨트롤러에서 이미 체크함
+      return; 
     }
 
     if (session.status === 'stopped') {
-      return; // 컨트롤러에서 이미 체크함
+      return; 
     }
 
     // 재연결 처리: lastEventId가 있으면 기록

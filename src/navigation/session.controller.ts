@@ -39,17 +39,17 @@ export class SessionController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '운전 세션 시작',
-    description: '실시간 위험도 모니터링을 위한 세션을 생성합니다.',
+    summary: 'Start navigation session',
+    description: 'Creates a session for real-time risk monitoring during driving.',
   })
   @ApiResponse({
     status: 201,
-    description: '세션 생성 성공',
+    description: 'Session created successfully',
     type: SessionResponseDto,
   })
   @ApiResponse({
     status: 409,
-    description: '중복된 세션 ID',
+    description: 'Duplicate session ID',
     schema: {
       example: { error: 'Session already active', sessionId: '...' },
     },
@@ -66,24 +66,24 @@ export class SessionController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: '운전 세션 종료',
-    description: '진행 중인 세션을 종료하고 SSE 연결을 닫습니다.',
+    summary: 'Stop navigation session',
+    description: 'Terminates the active session and closes SSE connections.',
   })
   @ApiResponse({
     status: 200,
-    description: '세션 종료 성공',
+    description: 'Session stopped successfully',
     type: SessionResponseDto,
   })
   @ApiResponse({
     status: 404,
-    description: '세션을 찾을 수 없음',
+    description: 'Session not found',
     schema: {
       example: { error: 'Session not found', sessionId: '...' },
     },
   })
   @ApiResponse({
     status: 410,
-    description: '이미 종료된 세션',
+    description: 'Session already stopped',
     schema: {
       example: { error: 'Session already stopped', sessionId: '...' },
     },
@@ -96,19 +96,19 @@ export class SessionController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({
-    summary: 'SSE 실시간 위험도 스트림',
+    summary: 'SSE real-time risk stream',
     description:
-      '30초마다 위험도 업데이트를 수신합니다. text/event-stream 형식입니다.',
+      'Receives risk updates every 30 seconds via text/event-stream format.',
   })
   @ApiProduces('text/event-stream')
   @ApiQuery({
     name: 'sessionId',
-    description: '세션 ID',
+    description: 'Session ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @ApiResponse({
     status: 200,
-    description: 'SSE 연결 성공 - risk-update, session-ended, heartbeat 이벤트 수신',
+    description: 'SSE connected - receives risk-update, session-ended, and heartbeat events',
     schema: {
       example: {
         'risk-update': {
@@ -125,7 +125,7 @@ export class SessionController {
             averageRisk: 0.65,
             maxRisk: 0.85,
             highRiskCount: 3,
-            message: '전방 2km 구간 빗길 주의',
+            message: 'Wet road sections ahead in 2km - Drive carefully',
             urgency: 'medium',
           },
         },
@@ -134,11 +134,11 @@ export class SessionController {
   })
   @ApiResponse({
     status: 404,
-    description: '세션을 찾을 수 없음',
+    description: 'Session not found',
   })
   @ApiResponse({
     status: 410,
-    description: '이미 종료된 세션',
+    description: 'Session already stopped',
   })
   @Sse()
   sseStream(
@@ -175,8 +175,6 @@ export class SessionController {
 
     this.logger.log(`SSE connected: session=${sessionId}, user=${req.user.userId}`);
 
-    // Observable은 실제로는 사용하지 않음 (직접 response.write 사용)
-    // NestJS의 @Sse()가 요구하므로 빈 Observable 반환
     return new Observable((observer) => {
       // 연결 유지만 수행
       response.on('close', () => {

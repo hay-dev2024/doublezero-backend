@@ -33,9 +33,7 @@ export class RiskController {
   @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: 'Invalid request (empty/oversized batch)' })
   @ApiResponse({ status: HttpStatus.TOO_MANY_REQUESTS, description: 'Rate limit exceeded' })
   async batch(@Req() req: RequestWithUser, @Body() dto: RiskBatchRequestDto): Promise<RiskBatchResponseDto> {
-    // If authenticated, use user's id. Otherwise use an IP-scoped anon id
     const authUserId = req.user?.userId;
-    // Build an IP + UA-hash based anonymous identifier to reduce NAT bucket sharing
     const ip = (req.headers['x-forwarded-for'] as string) || req.ip || 'unknown';
     const ua = (req.headers['user-agent'] as string) || '';
     const uaHash = createHash('sha256').update(ua).digest('hex').slice(0, 8);

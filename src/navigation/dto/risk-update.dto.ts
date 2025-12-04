@@ -3,22 +3,22 @@ import { RiskPointDto } from '../../ai/dto/risk-point.dto';
 import { RiskSummaryDto } from './risk-summary.dto';
 
 export class CurrentPositionDto {
-  @ApiProperty({ description: '위도', example: 37.5665 })
+  @ApiProperty({ description: 'Latitude', example: 37.5665 })
   lat: number;
 
-  @ApiProperty({ description: '경도', example: 126.9780 })
+  @ApiProperty({ description: 'Longitude', example: 126.9780 })
   lng: number;
 
-  @ApiProperty({ description: '출발지로부터 이동 거리 (미터)', example: 2500 })
+  @ApiProperty({ description: 'Distance traveled from origin (meters)', example: 2500 })
   distanceFromStart: number;
 
-  @ApiProperty({ description: '목적지까지 남은 거리 (미터)', example: 42500 })
+  @ApiProperty({ description: 'Remaining distance to destination (meters)', example: 42500 })
   remainingDistance: number;
 }
 
 export class EnhancedRiskSummaryDto extends RiskSummaryDto {
   @ApiProperty({
-    description: '위험도 긴급성',
+    description: 'Risk urgency level',
     enum: ['low', 'medium', 'high'],
     example: 'medium',
   })
@@ -27,31 +27,31 @@ export class EnhancedRiskSummaryDto extends RiskSummaryDto {
 
 export class RiskUpdateDto {
   @ApiProperty({
-    description: '세션 ID',
+    description: 'Session ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   sessionId: string;
 
   @ApiProperty({
-    description: '업데이트 시각',
+    description: 'Update timestamp',
     example: '2025-12-01T10:35:00Z',
   })
   timestamp: string;
 
   @ApiProperty({
-    description: '현재 위치 정보',
+    description: 'Current position information',
     type: CurrentPositionDto,
   })
   currentPosition: CurrentPositionDto;
 
   @ApiProperty({
-    description: '위험도 포인트 배열',
+    description: 'Array of risk points',
     type: [RiskPointDto],
   })
   riskPoints: RiskPointDto[];
 
   @ApiProperty({
-    description: '위험도 요약',
+    description: 'Risk summary',
     type: EnhancedRiskSummaryDto,
   })
   summary: EnhancedRiskSummaryDto;
@@ -59,13 +59,13 @@ export class RiskUpdateDto {
 
 export class SessionEndedDto {
   @ApiProperty({
-    description: '종료된 세션 ID',
+    description: 'Terminated session ID',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   sessionId: string;
 
   @ApiProperty({
-    description: '종료 사유',
+    description: 'Termination reason',
     enum: ['destination-reached', 'user-stopped', 'timeout'],
     example: 'destination-reached',
   })

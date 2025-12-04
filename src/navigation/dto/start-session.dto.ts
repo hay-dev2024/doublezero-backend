@@ -3,7 +3,7 @@ import { IsString, IsNotEmpty, IsISO8601, IsNumber, Min, Max, IsUUID } from 'cla
 
 export class StartSessionDto {
   @ApiProperty({
-    description: '세션 고유 ID (UUID v4)',
+    description: 'Unique session ID (UUID v4)',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsUUID(4)
@@ -11,7 +11,7 @@ export class StartSessionDto {
   sessionId: string;
 
   @ApiProperty({
-    description: 'Google Routes API의 인코딩된 polyline',
+    description: 'Encoded polyline from Google Routes API',
     example: '_p~iF~ps|U_ulLnnqC_mqNvxq`@',
   })
   @IsString()
@@ -19,7 +19,7 @@ export class StartSessionDto {
   polyline: string;
 
   @ApiProperty({
-    description: '운전 시작 시각 (ISO 8601)',
+    description: 'Driving start time (ISO 8601)',
     example: '2025-12-01T10:30:00Z',
   })
   @IsISO8601()
@@ -27,7 +27,7 @@ export class StartSessionDto {
   startTime: string;
 
   @ApiProperty({
-    description: '시뮬레이션 평균 속도 (km/h)',
+    description: 'Simulation average speed (km/h)',
     example: 60,
     default: 60,
   })

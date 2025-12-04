@@ -205,7 +205,6 @@ export class SessionScheduler {
       urgency = 'low';
     }
 
-    // 메시지 생성
     const message = this.generateRiskMessage(
       maxRisk,
       highRiskCount,
@@ -231,7 +230,6 @@ export class SessionScheduler {
     highRiskCount: number,
     weatherData: any[],
   ): string {
-    // 날씨 조건 분석
     const hasRain = weatherData.some((w) => w.weather && w.weather.toLowerCase().includes('rain'));
     const hasSnow = weatherData.some((w) => w.weather && w.weather.toLowerCase().includes('snow'));
     const hasFog = weatherData.some((w) => w.visibilityMi && w.visibilityMi < 2);
