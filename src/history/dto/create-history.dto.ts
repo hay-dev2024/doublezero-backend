@@ -14,9 +14,17 @@ export class CreateHistoryDto {
   @Type(() => CoordinateDto)
   origin: CoordinateDto;
 
+  @IsOptional()
+  @IsString()
+  originName?: string;
+
   @ValidateNested()
   @Type(() => CoordinateDto)
   destination: CoordinateDto;
+
+  @IsOptional()
+  @IsString()
+  destinationName?: string;
 
   @IsOptional()
   @IsString()

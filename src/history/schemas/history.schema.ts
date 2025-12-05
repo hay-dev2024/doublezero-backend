@@ -10,8 +10,14 @@ export class History extends Document {
   @Prop({ type: Object, required: true })
   origin: { lat: number; lon: number };
 
+  @Prop()
+  originName: string;
+
   @Prop({ type: Object, required: true })
   destination: { lat: number; lon: number };
+
+  @Prop()
+  destinationName: string;
 
   @Prop()
   polyline: string;
